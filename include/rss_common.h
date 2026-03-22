@@ -1,0 +1,180 @@
+/*
+ * rss_common.h — Raptor Streaming System common library
+ *
+ * Public API for logging, configuration, daemonization, signal handling,
+ * and general utilities shared by all RSS daemons.
+ *
+ * Pure POSIX C11. No vendor dependencies.
+ */
+
+#ifndef RSS_COMMON_H
+#define RSS_COMMON_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <signal.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ================================================================
+ * Logging
+ * ================================================================ */
+
+typedef enum {
+    RSS_LOG_FATAL = 0,
+    RSS_LOG_ERROR = 1,
+    RSS_LOG_WARN  = 2,
+    RSS_LOG_INFO  = 3,
+    RSS_LOG_DEBUG = 4,
+    RSS_LOG_TRACE = 5,
+} rss_log_level_t;
+
+typedef enum {
+    RSS_LOG_TARGET_STDERR = 0,
+    RSS_LOG_TARGET_SYSLOG = 1,
+    RSS_LOG_TARGET_FILE   = 2,
+} rss_log_target_t;
+
+/* Initialize logging. daemon_name is used as syslog ident and log prefix.
+ * Call once at daemon startup. */
+void rss_log_init(const char *daemon_name, rss_log_level_t level,
+                  rss_log_target_t target, const char *log_file);
+
+/* Set log level at runtime (e.g., from raptorctl command) */
+void rss_log_set_level(rss_log_level_t level);
+rss_log_level_t rss_log_get_level(void);
+
+/* Log a message. Use the macros below instead. */
+void rss_log(rss_log_level_t level, const char *file, int line,
+             const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+
+#define RSS_FATAL(fmt, ...) rss_log(RSS_LOG_FATAL, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_ERROR(fmt, ...) rss_log(RSS_LOG_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_WARN(fmt, ...)  rss_log(RSS_LOG_WARN,  __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_INFO(fmt, ...)  rss_log(RSS_LOG_INFO,  __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_DEBUG(fmt, ...) rss_log(RSS_LOG_DEBUG, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_TRACE(fmt, ...) rss_log(RSS_LOG_TRACE, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+/* ================================================================
+ * Configuration
+ *
+ * Simple key=value config parser. Supports sections [section],
+ * comments (#), and inline comments. No dependencies on json-c.
+ *
+ * Config file format:
+ *   [section]
+ *   key = value
+ *   # comment
+ * ================================================================ */
+
+typedef struct rss_config rss_config_t; /* opaque */
+
+/* Load config from file. Returns NULL on error. */
+rss_config_t *rss_config_load(const char *path);
+
+/* Free config. */
+void rss_config_free(rss_config_t *cfg);
+
+/* Get string value. Returns default_val if key not found.
+ * Section can be NULL for global keys. */
+const char *rss_config_get_str(rss_config_t *cfg, const char *section,
+                                const char *key, const char *default_val);
+
+/* Get integer value. */
+int rss_config_get_int(rss_config_t *cfg, const char *section,
+                        const char *key, int default_val);
+
+/* Get boolean value (true/false, yes/no, 1/0, on/off). */
+bool rss_config_get_bool(rss_config_t *cfg, const char *section,
+                          const char *key, bool default_val);
+
+/* Iterate all keys in a section. Returns number of keys.
+ * callback is called for each key/value pair. */
+int rss_config_foreach(rss_config_t *cfg, const char *section,
+                        void (*callback)(const char *key, const char *value,
+                                        void *userdata),
+                        void *userdata);
+
+/* ================================================================
+ * Daemon Lifecycle
+ * ================================================================ */
+
+/* Daemonize the process (fork, setsid, close fds, chdir /).
+ * Creates PID file at /var/run/rss/<name>.pid.
+ * Returns 0 on success (in child), -1 on error.
+ * If already_daemon is true, skip fork but still write pidfile. */
+int rss_daemonize(const char *name, bool already_daemon);
+
+/* Remove PID file. Call at clean shutdown. */
+void rss_daemon_cleanup(const char *name);
+
+/* Check if a daemon is running. Returns PID if running, 0 if not, -1 on error. */
+int rss_daemon_check(const char *name);
+
+/* ================================================================
+ * Signal Handling
+ * ================================================================ */
+
+/* Install common signal handlers:
+ * - SIGTERM/SIGINT -> set running=false (clean shutdown)
+ * - SIGHUP -> set reload=true (config reload)
+ * - SIGPIPE -> ignore
+ * Returns the "running" flag pointer that the daemon should poll
+ * in its main loop: while (*running) { ... } */
+volatile sig_atomic_t *rss_signal_init(void);
+
+/* Check if reload was requested (SIGHUP). Clears the flag. */
+bool rss_signal_reload_requested(void);
+
+/* ================================================================
+ * Timestamp Utilities
+ * ================================================================ */
+
+/* Get monotonic timestamp in microseconds */
+int64_t rss_timestamp_us(void);
+
+/* Get wall-clock timestamp in microseconds */
+int64_t rss_wallclock_us(void);
+
+/* Format timestamp as ISO 8601 string (YYYY-MM-DD HH:MM:SS) into buf.
+ * buf must be at least 20 bytes. Returns buf. */
+char *rss_format_timestamp(char *buf, int buf_size);
+
+/* Format timestamp with custom format string (strftime-compatible) */
+char *rss_format_timestamp_fmt(char *buf, int buf_size, const char *fmt);
+
+/* ================================================================
+ * String Utilities
+ * ================================================================ */
+
+/* Safe string copy that always NUL-terminates. Returns dst. */
+char *rss_strlcpy(char *dst, const char *src, int dst_size);
+
+/* Trim leading/trailing whitespace in-place. Returns s. */
+char *rss_trim(char *s);
+
+/* Check if string starts with prefix */
+bool rss_starts_with(const char *s, const char *prefix);
+
+/* ================================================================
+ * File Utilities
+ * ================================================================ */
+
+/* Read entire file contents into malloc'd buffer. Caller frees.
+ * Returns NULL on error. *out_size set to file size if non-NULL. */
+char *rss_read_file(const char *path, int *out_size);
+
+/* Write buffer to file atomically (write to .tmp, rename). */
+int rss_write_file_atomic(const char *path, const void *data, int size);
+
+/* Ensure directory exists (mkdir -p). Returns 0 on success. */
+int rss_mkdir_p(const char *path);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* RSS_COMMON_H */
