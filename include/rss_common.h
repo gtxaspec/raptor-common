@@ -98,6 +98,17 @@ int rss_config_foreach(rss_config_t *cfg, const char *section,
                                         void *userdata),
                         void *userdata);
 
+/* Set a string value in the running config. Creates section/key if needed. */
+void rss_config_set_str(rss_config_t *cfg, const char *section,
+                        const char *key, const char *value);
+
+/* Set an integer value in the running config. */
+void rss_config_set_int(rss_config_t *cfg, const char *section,
+                        const char *key, int value);
+
+/* Save running config to disk (atomic write). Returns 0 on success. */
+int rss_config_save(rss_config_t *cfg, const char *path);
+
 /* ================================================================
  * Daemon Lifecycle
  * ================================================================ */

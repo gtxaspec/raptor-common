@@ -259,3 +259,118 @@ int rss_config_foreach(rss_config_t *cfg, const char *section,
     }
     return count;
 }
+
+/* ------------------------------------------------------------------ */
+/* Config modification (running-config support)                        */
+/* ------------------------------------------------------------------ */
+
+void rss_config_set_str(rss_config_t *cfg, const char *section,
+                        const char *key, const char *value)
+{
+    if (!cfg || !key || !value)
+        return;
+    rss_config_section_t *sec =
+        find_or_create_section(cfg, section ? section : "");
+    if (sec)
+        add_entry(sec, key, value);
+}
+
+void rss_config_set_int(rss_config_t *cfg, const char *section,
+                        const char *key, int value)
+{
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d", value);
+    rss_config_set_str(cfg, section, key, buf);
+}
+
+int rss_config_save(rss_config_t *cfg, const char *path)
+{
+    if (!cfg || !path)
+        return -1;
+
+    /* Count sections to reverse linked-list order (restore file order) */
+    int nsec = 0;
+    rss_config_section_t *s;
+    for (s = cfg->sections; s; s = s->next)
+        nsec++;
+
+    if (nsec == 0)
+        return rss_write_file_atomic(path, "", 0);
+
+    /* Collect section pointers for reverse traversal */
+    rss_config_section_t **secs = malloc(nsec * sizeof(*secs));
+    if (!secs)
+        return -1;
+
+    int i = 0;
+    for (s = cfg->sections; s; s = s->next)
+        secs[i++] = s;
+
+    /* Build output into a dynamic buffer */
+    int buf_size = 4096;
+    char *buf = malloc(buf_size);
+    if (!buf) {
+        free(secs);
+        return -1;
+    }
+    int off = 0;
+
+    for (i = nsec - 1; i >= 0; i--) {
+        s = secs[i];
+
+        /* Count entries for reverse traversal */
+        int nent = 0;
+        rss_config_entry_t *e;
+        for (e = s->entries; e; e = e->next)
+            nent++;
+
+        if (nent == 0)
+            continue;
+
+        rss_config_entry_t **ents = malloc(nent * sizeof(*ents));
+        if (!ents)
+            continue;
+
+        int j = 0;
+        for (e = s->entries; e; e = e->next)
+            ents[j++] = e;
+
+        /* Section header (skip for global section) */
+        if (s->name[0] != '\0') {
+            /* Ensure space: [name]\n + entries */
+            int need = off + (int)strlen(s->name) + 4;
+            if (need > buf_size) {
+                buf_size = need + 4096;
+                char *nb = realloc(buf, buf_size);
+                if (!nb) { free(ents); continue; }
+                buf = nb;
+            }
+            if (off > 0)
+                buf[off++] = '\n';  /* blank line between sections */
+            off += snprintf(buf + off, buf_size - off,
+                            "[%s]\n", s->name);
+        }
+
+        /* Entries in original order */
+        for (j = nent - 1; j >= 0; j--) {
+            int need = off + (int)strlen(ents[j]->key) +
+                       (int)strlen(ents[j]->value) + 8;
+            if (need > buf_size) {
+                buf_size = need + 4096;
+                char *nb = realloc(buf, buf_size);
+                if (!nb) break;
+                buf = nb;
+            }
+            off += snprintf(buf + off, buf_size - off,
+                            "%s = %s\n", ents[j]->key, ents[j]->value);
+        }
+
+        free(ents);
+    }
+
+    free(secs);
+
+    int ret = rss_write_file_atomic(path, buf, off);
+    free(buf);
+    return ret;
+}
