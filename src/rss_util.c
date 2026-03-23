@@ -114,22 +114,28 @@ char *rss_read_file(const char *path, int *out_size)
         return NULL;
 
     struct stat st;
-    if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+    if (fstat(fd, &st) < 0) {
         close(fd);
         return NULL;
     }
 
-    int size = (int)st.st_size;
-    /* Allocate size + 1 so callers treating it as a string get NUL */
-    char *buf = malloc((size_t)size + 1);
+    /* Use stat size if available, otherwise default to 4KB (proc files report 0) */
+    int capacity = (st.st_size > 0) ? (int)st.st_size + 1 : 4096;
+    char *buf = malloc((size_t)capacity);
     if (!buf) {
         close(fd);
         return NULL;
     }
 
     int total = 0;
-    while (total < size) {
-        ssize_t n = read(fd, buf + total, (size_t)(size - total));
+    for (;;) {
+        if (total >= capacity - 1) {
+            capacity *= 2;
+            char *newbuf = realloc(buf, (size_t)capacity);
+            if (!newbuf) { free(buf); close(fd); return NULL; }
+            buf = newbuf;
+        }
+        ssize_t n = read(fd, buf + total, (size_t)(capacity - 1 - total));
         if (n < 0) {
             if (errno == EINTR)
                 continue;
