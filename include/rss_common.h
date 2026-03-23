@@ -26,8 +26,8 @@ extern "C" {
 typedef enum {
     RSS_LOG_FATAL = 0,
     RSS_LOG_ERROR = 1,
-    RSS_LOG_WARN  = 2,
-    RSS_LOG_INFO  = 3,
+    RSS_LOG_WARN = 2,
+    RSS_LOG_INFO = 3,
     RSS_LOG_DEBUG = 4,
     RSS_LOG_TRACE = 5,
 } rss_log_level_t;
@@ -35,26 +35,26 @@ typedef enum {
 typedef enum {
     RSS_LOG_TARGET_STDERR = 0,
     RSS_LOG_TARGET_SYSLOG = 1,
-    RSS_LOG_TARGET_FILE   = 2,
+    RSS_LOG_TARGET_FILE = 2,
 } rss_log_target_t;
 
 /* Initialize logging. daemon_name is used as syslog ident and log prefix.
  * Call once at daemon startup. */
-void rss_log_init(const char *daemon_name, rss_log_level_t level,
-                  rss_log_target_t target, const char *log_file);
+void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target_t target,
+                  const char *log_file);
 
 /* Set log level at runtime (e.g., from raptorctl command) */
 void rss_log_set_level(rss_log_level_t level);
 rss_log_level_t rss_log_get_level(void);
 
 /* Log a message. Use the macros below instead. */
-void rss_log(rss_log_level_t level, const char *file, int line,
-             const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+void rss_log(rss_log_level_t level, const char *file, int line, const char *fmt, ...)
+    __attribute__((format(printf, 4, 5)));
 
 #define RSS_FATAL(fmt, ...) rss_log(RSS_LOG_FATAL, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 #define RSS_ERROR(fmt, ...) rss_log(RSS_LOG_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
-#define RSS_WARN(fmt, ...)  rss_log(RSS_LOG_WARN,  __FILE__, __LINE__, fmt, ##__VA_ARGS__)
-#define RSS_INFO(fmt, ...)  rss_log(RSS_LOG_INFO,  __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_WARN(fmt, ...) rss_log(RSS_LOG_WARN, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define RSS_INFO(fmt, ...) rss_log(RSS_LOG_INFO, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 #define RSS_DEBUG(fmt, ...) rss_log(RSS_LOG_DEBUG, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 #define RSS_TRACE(fmt, ...) rss_log(RSS_LOG_TRACE, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 
@@ -80,31 +80,26 @@ void rss_config_free(rss_config_t *cfg);
 
 /* Get string value. Returns default_val if key not found.
  * Section can be NULL for global keys. */
-const char *rss_config_get_str(rss_config_t *cfg, const char *section,
-                                const char *key, const char *default_val);
+const char *rss_config_get_str(rss_config_t *cfg, const char *section, const char *key,
+                               const char *default_val);
 
 /* Get integer value. */
-int rss_config_get_int(rss_config_t *cfg, const char *section,
-                        const char *key, int default_val);
+int rss_config_get_int(rss_config_t *cfg, const char *section, const char *key, int default_val);
 
 /* Get boolean value (true/false, yes/no, 1/0, on/off). */
-bool rss_config_get_bool(rss_config_t *cfg, const char *section,
-                          const char *key, bool default_val);
+bool rss_config_get_bool(rss_config_t *cfg, const char *section, const char *key, bool default_val);
 
 /* Iterate all keys in a section. Returns number of keys.
  * callback is called for each key/value pair. */
 int rss_config_foreach(rss_config_t *cfg, const char *section,
-                        void (*callback)(const char *key, const char *value,
-                                        void *userdata),
-                        void *userdata);
+                       void (*callback)(const char *key, const char *value, void *userdata),
+                       void *userdata);
 
 /* Set a string value in the running config. Creates section/key if needed. */
-void rss_config_set_str(rss_config_t *cfg, const char *section,
-                        const char *key, const char *value);
+void rss_config_set_str(rss_config_t *cfg, const char *section, const char *key, const char *value);
 
 /* Set an integer value in the running config. */
-void rss_config_set_int(rss_config_t *cfg, const char *section,
-                        const char *key, int value);
+void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key, int value);
 
 /* Save running config to disk (atomic write). Returns 0 on success. */
 int rss_config_save(rss_config_t *cfg, const char *path);

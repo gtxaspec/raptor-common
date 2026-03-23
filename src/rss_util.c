@@ -132,7 +132,11 @@ char *rss_read_file(const char *path, int *out_size)
         if (total >= capacity - 1) {
             capacity *= 2;
             char *newbuf = realloc(buf, (size_t)capacity);
-            if (!newbuf) { free(buf); close(fd); return NULL; }
+            if (!newbuf) {
+                free(buf);
+                close(fd);
+                return NULL;
+            }
             buf = newbuf;
         }
         ssize_t n = read(fd, buf + total, (size_t)(capacity - 1 - total));

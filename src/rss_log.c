@@ -17,10 +17,10 @@
 /* State                                                               */
 /* ------------------------------------------------------------------ */
 
-static char              s_daemon_name[64];
-static rss_log_level_t   s_level  = RSS_LOG_INFO;
-static rss_log_target_t  s_target = RSS_LOG_TARGET_STDERR;
-static FILE             *s_fp     = NULL;  /* file target */
+static char s_daemon_name[64];
+static rss_log_level_t s_level = RSS_LOG_INFO;
+static rss_log_target_t s_target = RSS_LOG_TARGET_STDERR;
+static FILE *s_fp = NULL; /* file target */
 
 static const char *level_names[] = {
     "FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE",
@@ -28,24 +28,23 @@ static const char *level_names[] = {
 
 /* Map RSS log levels to syslog priorities */
 static const int syslog_prio[] = {
-    LOG_CRIT,     /* FATAL */
-    LOG_ERR,      /* ERROR */
-    LOG_WARNING,  /* WARN  */
-    LOG_INFO,     /* INFO  */
-    LOG_DEBUG,    /* DEBUG */
-    LOG_DEBUG,    /* TRACE */
+    LOG_CRIT,    /* FATAL */
+    LOG_ERR,     /* ERROR */
+    LOG_WARNING, /* WARN  */
+    LOG_INFO,    /* INFO  */
+    LOG_DEBUG,   /* DEBUG */
+    LOG_DEBUG,   /* TRACE */
 };
 
 /* ------------------------------------------------------------------ */
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
-void rss_log_init(const char *daemon_name, rss_log_level_t level,
-                  rss_log_target_t target, const char *log_file)
+void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target_t target,
+                  const char *log_file)
 {
-    rss_strlcpy(s_daemon_name, daemon_name ? daemon_name : "rss",
-                (int)sizeof(s_daemon_name));
-    s_level  = level;
+    rss_strlcpy(s_daemon_name, daemon_name ? daemon_name : "rss", (int)sizeof(s_daemon_name));
+    s_level = level;
     s_target = target;
 
     if (target == RSS_LOG_TARGET_SYSLOG) {
@@ -55,8 +54,8 @@ void rss_log_init(const char *daemon_name, rss_log_level_t level,
         if (!s_fp) {
             /* Fall back to stderr if we can't open the log file */
             s_target = RSS_LOG_TARGET_STDERR;
-            fprintf(stderr, "%s: failed to open log file %s, using stderr\n",
-                    s_daemon_name, log_file);
+            fprintf(stderr, "%s: failed to open log file %s, using stderr\n", s_daemon_name,
+                    log_file);
         }
     }
 }
@@ -71,8 +70,7 @@ rss_log_level_t rss_log_get_level(void)
     return s_level;
 }
 
-void rss_log(rss_log_level_t level, const char *file, int line,
-             const char *fmt, ...)
+void rss_log(rss_log_level_t level, const char *file, int line, const char *fmt, ...)
 {
     if (level > s_level)
         return;
@@ -84,8 +82,7 @@ void rss_log(rss_log_level_t level, const char *file, int line,
         /* Syslog handles its own timestamping */
         char msg[512];
         vsnprintf(msg, sizeof(msg), fmt, ap);
-        syslog(syslog_prio[level], "[%s] %s:%d: %s",
-               level_names[level], file, line, msg);
+        syslog(syslog_prio[level], "[%s] %s:%d: %s", level_names[level], file, line, msg);
         va_end(ap);
         return;
     }
@@ -98,15 +95,13 @@ void rss_log(rss_log_level_t level, const char *file, int line,
 
     char tsbuf[16];
     int ms = (int)(ts.tv_nsec / 1000000);
-    snprintf(tsbuf, sizeof(tsbuf), "%02d:%02d:%02d.%03d",
-             tm.tm_hour, tm.tm_min, tm.tm_sec, ms);
+    snprintf(tsbuf, sizeof(tsbuf), "%02d:%02d:%02d.%03d", tm.tm_hour, tm.tm_min, tm.tm_sec, ms);
 
     FILE *out = (s_target == RSS_LOG_TARGET_FILE && s_fp) ? s_fp : stderr;
 
     flockfile(out);
 
-    fprintf(out, "%s %s [%s] %s:%d: ", tsbuf, s_daemon_name,
-            level_names[level], file, line);
+    fprintf(out, "%s %s [%s] %s:%d: ", tsbuf, s_daemon_name, level_names[level], file, line);
     vfprintf(out, fmt, ap);
 
     /* Ensure newline */

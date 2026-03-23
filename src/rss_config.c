@@ -10,17 +10,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>  /* strcasecmp */
+#include <strings.h> /* strcasecmp */
 #include <ctype.h>
 
 /* ------------------------------------------------------------------ */
 /* Internal data structures                                            */
 /* ------------------------------------------------------------------ */
 
-#define MAX_LINE   512
-#define MAX_SECN    64
-#define MAX_KEY     64
-#define MAX_VAL    256
+#define MAX_LINE 512
+#define MAX_SECN 64
+#define MAX_KEY 64
+#define MAX_VAL 256
 
 typedef struct rss_config_entry {
     char key[MAX_KEY];
@@ -43,8 +43,7 @@ struct rss_config {
 /* ------------------------------------------------------------------ */
 
 /* Find or create a section. Empty name ("") is the global section. */
-static rss_config_section_t *find_or_create_section(rss_config_t *cfg,
-                                                     const char *name)
+static rss_config_section_t *find_or_create_section(rss_config_t *cfg, const char *name)
 {
     rss_config_section_t *s;
     for (s = cfg->sections; s; s = s->next) {
@@ -61,8 +60,7 @@ static rss_config_section_t *find_or_create_section(rss_config_t *cfg,
     return s;
 }
 
-static void add_entry(rss_config_section_t *sec,
-                      const char *key, const char *value)
+static void add_entry(rss_config_section_t *sec, const char *key, const char *value)
 {
     /* Overwrite if key already exists */
     rss_config_entry_t *e;
@@ -131,8 +129,7 @@ rss_config_t *rss_config_load(const char *path)
             char *end = strchr(s, ']');
             if (end) {
                 *end = '\0';
-                rss_strlcpy(current_section, rss_trim(s + 1),
-                            (int)sizeof(current_section));
+                rss_strlcpy(current_section, rss_trim(s + 1), (int)sizeof(current_section));
             }
             continue;
         }
@@ -153,8 +150,7 @@ rss_config_t *rss_config_load(const char *path)
         if (*key == '\0')
             continue;
 
-        rss_config_section_t *sec =
-            find_or_create_section(cfg, current_section);
+        rss_config_section_t *sec = find_or_create_section(cfg, current_section);
         if (sec)
             add_entry(sec, key, val);
     }
@@ -183,8 +179,8 @@ void rss_config_free(rss_config_t *cfg)
     free(cfg);
 }
 
-const char *rss_config_get_str(rss_config_t *cfg, const char *section,
-                                const char *key, const char *default_val)
+const char *rss_config_get_str(rss_config_t *cfg, const char *section, const char *key,
+                               const char *default_val)
 {
     if (!cfg || !key)
         return default_val;
@@ -204,8 +200,7 @@ const char *rss_config_get_str(rss_config_t *cfg, const char *section,
     return default_val;
 }
 
-int rss_config_get_int(rss_config_t *cfg, const char *section,
-                        const char *key, int default_val)
+int rss_config_get_int(rss_config_t *cfg, const char *section, const char *key, int default_val)
 {
     const char *val = rss_config_get_str(cfg, section, key, NULL);
     if (!val)
@@ -218,28 +213,26 @@ int rss_config_get_int(rss_config_t *cfg, const char *section,
     return (int)v;
 }
 
-bool rss_config_get_bool(rss_config_t *cfg, const char *section,
-                          const char *key, bool default_val)
+bool rss_config_get_bool(rss_config_t *cfg, const char *section, const char *key, bool default_val)
 {
     const char *val = rss_config_get_str(cfg, section, key, NULL);
     if (!val)
         return default_val;
 
-    if (strcasecmp(val, "true") == 0 || strcasecmp(val, "yes") == 0 ||
-        strcasecmp(val, "on") == 0   || strcmp(val, "1") == 0)
+    if (strcasecmp(val, "true") == 0 || strcasecmp(val, "yes") == 0 || strcasecmp(val, "on") == 0 ||
+        strcmp(val, "1") == 0)
         return true;
 
     if (strcasecmp(val, "false") == 0 || strcasecmp(val, "no") == 0 ||
-        strcasecmp(val, "off") == 0   || strcmp(val, "0") == 0)
+        strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0)
         return false;
 
     return default_val;
 }
 
 int rss_config_foreach(rss_config_t *cfg, const char *section,
-                        void (*callback)(const char *key, const char *value,
-                                        void *userdata),
-                        void *userdata)
+                       void (*callback)(const char *key, const char *value, void *userdata),
+                       void *userdata)
 {
     if (!cfg || !callback)
         return 0;
@@ -264,19 +257,16 @@ int rss_config_foreach(rss_config_t *cfg, const char *section,
 /* Config modification (running-config support)                        */
 /* ------------------------------------------------------------------ */
 
-void rss_config_set_str(rss_config_t *cfg, const char *section,
-                        const char *key, const char *value)
+void rss_config_set_str(rss_config_t *cfg, const char *section, const char *key, const char *value)
 {
     if (!cfg || !key || !value)
         return;
-    rss_config_section_t *sec =
-        find_or_create_section(cfg, section ? section : "");
+    rss_config_section_t *sec = find_or_create_section(cfg, section ? section : "");
     if (sec)
         add_entry(sec, key, value);
 }
 
-void rss_config_set_int(rss_config_t *cfg, const char *section,
-                        const char *key, int value)
+void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key, int value)
 {
     char buf[32];
     snprintf(buf, sizeof(buf), "%d", value);
@@ -342,27 +332,28 @@ int rss_config_save(rss_config_t *cfg, const char *path)
             if (need > buf_size) {
                 buf_size = need + 4096;
                 char *nb = realloc(buf, buf_size);
-                if (!nb) { free(ents); continue; }
+                if (!nb) {
+                    free(ents);
+                    continue;
+                }
                 buf = nb;
             }
             if (off > 0)
-                buf[off++] = '\n';  /* blank line between sections */
-            off += snprintf(buf + off, buf_size - off,
-                            "[%s]\n", s->name);
+                buf[off++] = '\n'; /* blank line between sections */
+            off += snprintf(buf + off, buf_size - off, "[%s]\n", s->name);
         }
 
         /* Entries in original order */
         for (j = nent - 1; j >= 0; j--) {
-            int need = off + (int)strlen(ents[j]->key) +
-                       (int)strlen(ents[j]->value) + 8;
+            int need = off + (int)strlen(ents[j]->key) + (int)strlen(ents[j]->value) + 8;
             if (need > buf_size) {
                 buf_size = need + 4096;
                 char *nb = realloc(buf, buf_size);
-                if (!nb) break;
+                if (!nb)
+                    break;
                 buf = nb;
             }
-            off += snprintf(buf + off, buf_size - off,
-                            "%s = %s\n", ents[j]->key, ents[j]->value);
+            off += snprintf(buf + off, buf_size - off, "%s = %s\n", ents[j]->key, ents[j]->value);
         }
 
         free(ents);

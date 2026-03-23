@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-#define PID_DIR  "/var/run/rss"
+#define PID_DIR "/var/run/rss"
 #define PID_PATH_MAX 128
 
 /* ------------------------------------------------------------------ */
@@ -23,7 +23,7 @@
 /* ------------------------------------------------------------------ */
 
 static volatile sig_atomic_t g_running = 1;
-static volatile sig_atomic_t g_reload  = 0;
+static volatile sig_atomic_t g_reload = 0;
 
 static void sig_term_handler(int sig)
 {
@@ -146,7 +146,7 @@ volatile sig_atomic_t *rss_signal_init(void)
     struct sigaction sa;
 
     g_running = 1;
-    g_reload  = 0;
+    g_reload = 0;
 
     /* SIGTERM, SIGINT → clean shutdown */
     memset(&sa, 0, sizeof(sa));
@@ -154,7 +154,7 @@ volatile sig_atomic_t *rss_signal_init(void)
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 
     /* SIGHUP → config reload */
     memset(&sa, 0, sizeof(sa));
