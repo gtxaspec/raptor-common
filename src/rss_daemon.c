@@ -53,11 +53,15 @@ static int write_pid_file(const char *name)
 
     rss_mkdir_p(PID_DIR);
 
-    FILE *fp = fopen(path, "w");
-    if (!fp)
+    /* Use raw I/O — stdio fopen/fprintf internally malloc buffers
+     * which can interfere with subsequent mmap on MIPS uclibc */
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0)
         return -1;
-    fprintf(fp, "%d\n", (int)getpid());
-    fclose(fp);
+    char buf[16];
+    int len = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
+    write(fd, buf, (size_t)len);
+    close(fd);
     return 0;
 }
 
