@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -101,6 +102,71 @@ bool rss_starts_with(const char *s, const char *prefix)
         return false;
     size_t plen = strlen(prefix);
     return strncmp(s, prefix, plen) == 0;
+}
+
+bool rss_secure_compare(const char *a, const char *b)
+{
+    if (!a || !b)
+        return false;
+    size_t alen = strlen(a);
+    size_t blen = strlen(b);
+    /* Always compare alen bytes to avoid leaking length via early exit.
+     * XOR accumulator is non-zero on any mismatch. */
+    volatile unsigned char diff = (unsigned char)(alen ^ blen);
+    for (size_t i = 0; i < alen; i++)
+        diff |= (unsigned char)a[i] ^ (unsigned char)(i < blen ? b[i] : 0);
+    return diff == 0;
+}
+
+/* ================================================================
+ * JSON Helpers
+ * ================================================================ */
+
+int rss_json_get_str(const char *json, const char *key, char *buf, int buf_size)
+{
+    if (!json || !key || !buf || buf_size < 1)
+        return -1;
+    if (strlen(key) > 54) /* pattern: "key":"  must fit in 64 bytes */
+        return -1;
+    char pattern[64];
+    snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
+    const char *p = strstr(json, pattern);
+    if (!p)
+        return -1;
+    p += strlen(pattern);
+    const char *end = strchr(p, '"');
+    if (!end || end < p)
+        return -1;
+    int len = (int)(end - p);
+    if (len >= buf_size)
+        len = buf_size - 1;
+    memcpy(buf, p, (size_t)len);
+    buf[len] = '\0';
+    return 0;
+}
+
+int rss_json_get_int(const char *json, const char *key, int *out)
+{
+    if (!json || !key || !out)
+        return -1;
+    if (strlen(key) > 56) /* pattern: "key":  must fit in 64 bytes */
+        return -1;
+    char pattern[64];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    const char *p = strstr(json, pattern);
+    if (!p)
+        return -1;
+    p += strlen(pattern);
+    while (*p == ' ')
+        p++;
+    char *end;
+    long val = strtol(p, &end, 10);
+    if (end == p)
+        return -1;
+    if (val > INT_MAX || val < INT_MIN)
+        return -1;
+    *out = (int)val;
+    return 0;
 }
 
 /* ================================================================

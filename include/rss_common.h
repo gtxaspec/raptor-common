@@ -165,6 +165,47 @@ char *rss_trim(char *s);
 /* Check if string starts with prefix */
 bool rss_starts_with(const char *s, const char *prefix);
 
+/* Constant-time string comparison (for auth credentials).
+ * Compares all bytes regardless of mismatch position. */
+bool rss_secure_compare(const char *a, const char *b);
+
+/* ================================================================
+ * JSON Helpers (lightweight, no allocations)
+ *
+ * Simple key lookup in flat JSON strings from control socket commands.
+ * Not a full parser — handles the {"key":"value","key2":123} format
+ * used by raptorctl and inter-daemon IPC.
+ * ================================================================ */
+
+/* Extract string value for "key":"value". Returns 0 on success, -1 if not found. */
+int rss_json_get_str(const char *json, const char *key, char *buf, int buf_size);
+
+/* Extract integer value for "key":123. Returns 0 on success, -1 if not found. */
+int rss_json_get_int(const char *json, const char *key, int *out);
+
+/* ================================================================
+ * Daemon Init Helper
+ *
+ * Combines the standard startup sequence shared by all daemons:
+ * parse args (-c config -f foreground -d debug -h help),
+ * init logging, load config, daemonize, install signal handlers.
+ * ================================================================ */
+
+typedef struct {
+	const char *name;           /* daemon name (for logging, PID file) */
+	rss_config_t *cfg;          /* loaded config (caller must free) */
+	const char *config_path;    /* config file path used */
+	volatile sig_atomic_t *running; /* signal-controlled run flag */
+	bool foreground;
+	bool debug;
+} rss_daemon_ctx_t;
+
+/* Standard daemon startup. Parses args, inits logging, loads config,
+ * daemonizes, installs signal handlers.
+ * Returns 0 on success, 1 if daemon should exit cleanly (e.g. -h),
+ * -1 on fatal error. On success, ctx is populated. */
+int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv);
+
 /* ================================================================
  * File Utilities
  * ================================================================ */

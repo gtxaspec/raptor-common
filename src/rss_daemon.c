@@ -12,6 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <sys/stat.h>
 #include <errno.h>
 
@@ -71,6 +72,13 @@ static int write_pid_file(const char *name)
 
 int rss_daemonize(const char *name, bool already_daemon)
 {
+    /* Reject if another instance is already running */
+    int existing = rss_daemon_check(name);
+    if (existing > 0) {
+        fprintf(stderr, "%s: already running (pid %d)\n", name, existing);
+        return -1;
+    }
+
     if (!already_daemon) {
         /* First fork — detach from parent */
         pid_t pid = fork();
@@ -184,4 +192,71 @@ bool rss_signal_reload_requested(void)
         return true;
     }
     return false;
+}
+
+/* ------------------------------------------------------------------ */
+/* Daemon init helper                                                  */
+/* ------------------------------------------------------------------ */
+
+int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv)
+{
+    if (!ctx || !name)
+        return -1;
+
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->name = name;
+
+    const char *config_path = "/etc/raptor.conf";
+    bool foreground = false;
+    bool debug = false;
+    int opt;
+
+    optind = 1; /* reset getopt */
+    while ((opt = getopt(argc, argv, "c:fdh")) != -1) {
+        switch (opt) {
+        case 'c':
+            config_path = optarg;
+            break;
+        case 'f':
+            foreground = true;
+            break;
+        case 'd':
+            debug = true;
+            break;
+        case 'h':
+            fprintf(stderr, "Usage: %s [-c config] [-f] [-d] [-h]\n"
+                            "  -c <file>   Config file (default: /etc/raptor.conf)\n"
+                            "  -f          Run in foreground\n"
+                            "  -d          Debug logging\n"
+                            "  -h          Show this help\n",
+                    name);
+            return 1; /* clean exit */
+        default:
+            return -1;
+        }
+    }
+
+    ctx->config_path = config_path;
+    ctx->foreground = foreground;
+    ctx->debug = debug;
+
+    rss_log_init(name, debug ? RSS_LOG_DEBUG : RSS_LOG_INFO,
+                 foreground ? RSS_LOG_TARGET_STDERR : RSS_LOG_TARGET_SYSLOG, NULL);
+
+    ctx->cfg = rss_config_load(config_path);
+    if (!ctx->cfg) {
+        RSS_FATAL("failed to load config: %s", config_path);
+        return -1;
+    }
+
+    if (rss_daemonize(name, foreground) < 0) {
+        RSS_FATAL("daemonize failed");
+        rss_config_free(ctx->cfg);
+        ctx->cfg = NULL;
+        return -1;
+    }
+
+    ctx->running = rss_signal_init();
+    RSS_INFO("%s starting", name);
+    return 0;
 }
