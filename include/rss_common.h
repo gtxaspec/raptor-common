@@ -49,7 +49,7 @@ rss_log_level_t rss_log_get_level(void);
 
 /* Log a message. Use the macros below instead. */
 void rss_log(rss_log_level_t level, const char *file, int line, const char *fmt, ...)
-    __attribute__((format(printf, 4, 5)));
+    __attribute__((format(printf, 4, 5), nonnull(4)));
 
 #define RSS_FATAL(fmt, ...) rss_log(RSS_LOG_FATAL, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 #define RSS_ERROR(fmt, ...) rss_log(RSS_LOG_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
