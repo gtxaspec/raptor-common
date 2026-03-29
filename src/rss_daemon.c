@@ -240,6 +240,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     ctx->foreground = foreground;
     ctx->debug = debug;
 
+    /* Initial logging to stderr/syslog so config load errors are visible */
     rss_log_init(name, debug ? RSS_LOG_DEBUG : RSS_LOG_INFO,
                  foreground ? RSS_LOG_TARGET_STDERR : RSS_LOG_TARGET_SYSLOG, NULL);
 
@@ -247,6 +248,30 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     if (!ctx->cfg) {
         RSS_FATAL("failed to load config: %s", config_path);
         return -1;
+    }
+
+    /* Re-init logging from [log] config section.
+     * -d flag overrides config level. -f overrides target to stderr. */
+    {
+        const char *cfg_level = rss_config_get_str(ctx->cfg, "log", "level", "info");
+        const char *cfg_target = rss_config_get_str(ctx->cfg, "log", "target", "syslog");
+        const char *cfg_file = rss_config_get_str(ctx->cfg, "log", "file", "");
+
+        rss_log_level_t level = RSS_LOG_INFO;
+        if (strcmp(cfg_level, "fatal") == 0) level = RSS_LOG_FATAL;
+        else if (strcmp(cfg_level, "error") == 0) level = RSS_LOG_ERROR;
+        else if (strcmp(cfg_level, "warn") == 0) level = RSS_LOG_WARN;
+        else if (strcmp(cfg_level, "info") == 0) level = RSS_LOG_INFO;
+        else if (strcmp(cfg_level, "debug") == 0) level = RSS_LOG_DEBUG;
+        else if (strcmp(cfg_level, "trace") == 0) level = RSS_LOG_TRACE;
+        if (debug) level = RSS_LOG_DEBUG; /* -d flag overrides */
+
+        rss_log_target_t target = RSS_LOG_TARGET_SYSLOG;
+        if (foreground) target = RSS_LOG_TARGET_STDERR; /* -f overrides */
+        else if (strcmp(cfg_target, "stderr") == 0) target = RSS_LOG_TARGET_STDERR;
+        else if (strcmp(cfg_target, "file") == 0) target = RSS_LOG_TARGET_FILE;
+
+        rss_log_init(name, level, target, cfg_file[0] ? cfg_file : NULL);
     }
 
     if (rss_daemonize(name, foreground) < 0) {
