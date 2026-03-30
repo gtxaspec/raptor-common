@@ -207,6 +207,18 @@ typedef struct {
 int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv);
 
 /* ================================================================
+ * Control Socket Common Handlers
+ *
+ * Standard command handlers shared by all daemons. Call from
+ * daemon-specific ctrl handler to avoid duplicating config-get,
+ * config-save, etc. Returns response length if handled, -1 if
+ * the command was not recognized (caller should handle it).
+ * ================================================================ */
+
+int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_size,
+			   rss_config_t *cfg, const char *config_path);
+
+/* ================================================================
  * File Utilities
  * ================================================================ */
 
