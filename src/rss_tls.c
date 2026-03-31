@@ -200,8 +200,17 @@ ssize_t rss_tls_write(rss_tls_conn_t *conn, const void *buf, size_t len)
 	while (written < len) {
 		int ret = mbedtls_ssl_write(&conn->ssl, p + written, len - written);
 		if (ret < 0) {
-			if (ret == MBEDTLS_ERR_SSL_WANT_WRITE)
+			if (ret == MBEDTLS_ERR_SSL_WANT_WRITE ||
+			    ret == MBEDTLS_ERR_SSL_WANT_READ) {
+				struct pollfd pfd = {
+					.fd = conn->fd,
+					.events = (ret == MBEDTLS_ERR_SSL_WANT_READ)
+							  ? POLLIN
+							  : POLLOUT,
+				};
+				poll(&pfd, 1, 100);
 				continue;
+			}
 			return written > 0 ? (ssize_t)written : -1;
 		}
 		written += ret;
