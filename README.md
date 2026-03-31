@@ -12,6 +12,10 @@ by all RSS daemons (RVD, ROD, RAD, RSD). Pure POSIX C11, no vendor dependencies.
 | `rss_config.c` | INI parser with `[section]` / `key = value` support. Case-insensitive lookup, inline comment stripping, runtime modification, atomic save. |
 | `rss_daemon.c` | Double-fork daemonization, PID file management (`/var/run/rss/<name>.pid`), POSIX signal setup (SIGTERM/SIGINT for shutdown, SIGHUP for reload, SIGPIPE ignored). |
 | `rss_util.c` | Monotonic/wall-clock timestamps, `strftime` formatting, safe string copy (`rss_strlcpy`), whitespace trim, file read/atomic write, recursive mkdir. |
+| `rss_ctrl.c` | Common control socket handler for `config-get` / `config-save` commands. |
+| `rss_http.c` | HTTP helpers: Base64 decode (RFC 4648), HTTP Basic auth with constant-time comparison. |
+| `rss_net.h` | Header-only: address formatting, socket helpers. |
+| `rss_tls.c` | TLS server wrapper (mbedTLS). HTTPS for RHD/RWD. Compiled separately — not in `librss_common.a` to avoid mbedTLS dependency for all daemons. |
 
 ## Build
 
