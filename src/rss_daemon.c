@@ -2,7 +2,7 @@
  * rss_daemon.c — Raptor Streaming System daemonization and signal handling
  *
  * Standard double-fork daemonization, PID file management,
- * and POSIX signal setup for clean shutdown / config reload.
+ * and POSIX signal setup for clean shutdown.
  */
 
 #include "rss_common.h"
@@ -24,18 +24,11 @@
 /* ------------------------------------------------------------------ */
 
 static volatile sig_atomic_t g_running = 1;
-static volatile sig_atomic_t g_reload = 0;
 
 static void sig_term_handler(int sig)
 {
     (void)sig;
     g_running = 0;
-}
-
-static void sig_hup_handler(int sig)
-{
-    (void)sig;
-    g_reload = 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -158,7 +151,6 @@ volatile sig_atomic_t *rss_signal_init(void)
     struct sigaction sa;
 
     g_running = 1;
-    g_reload = 0;
 
     /* SIGTERM, SIGINT → clean shutdown */
     memset(&sa, 0, sizeof(sa));
@@ -168,9 +160,9 @@ volatile sig_atomic_t *rss_signal_init(void)
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
 
-    /* SIGHUP → config reload */
+    /* SIGHUP → ignore (config reload via control socket, not signals) */
     memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = sig_hup_handler;
+    sa.sa_handler = SIG_IGN;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGHUP, &sa, NULL);
@@ -183,15 +175,6 @@ volatile sig_atomic_t *rss_signal_init(void)
     sigaction(SIGPIPE, &sa, NULL);
 
     return &g_running;
-}
-
-bool rss_signal_reload_requested(void)
-{
-    if (g_reload) {
-        g_reload = 0;
-        return true;
-    }
-    return false;
 }
 
 /* ------------------------------------------------------------------ */

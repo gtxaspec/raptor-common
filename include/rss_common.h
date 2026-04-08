@@ -13,6 +13,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 #include <signal.h>
 
 #ifdef __cplusplus
@@ -126,14 +128,10 @@ int rss_daemon_check(const char *name);
 
 /* Install common signal handlers:
  * - SIGTERM/SIGINT -> set running=false (clean shutdown)
- * - SIGHUP -> set reload=true (config reload)
- * - SIGPIPE -> ignore
+ * - SIGHUP/SIGPIPE -> ignore
  * Returns the "running" flag pointer that the daemon should poll
  * in its main loop: while (*running) { ... } */
 volatile sig_atomic_t *rss_signal_init(void);
-
-/* Check if reload was requested (SIGHUP). Clears the flag. */
-bool rss_signal_reload_requested(void);
 
 /* ================================================================
  * Timestamp Utilities
