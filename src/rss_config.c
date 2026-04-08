@@ -304,6 +304,7 @@ int rss_config_save(rss_config_t *cfg, const char *path)
         return -1;
     }
     int off = 0;
+    int ret = -1;
 
     for (i = nsec - 1; i >= 0; i--) {
         s = secs[i];
@@ -319,7 +320,7 @@ int rss_config_save(rss_config_t *cfg, const char *path)
 
         rss_config_entry_t **ents = malloc(nent * sizeof(*ents));
         if (!ents)
-            continue;
+            goto out;
 
         int j = 0;
         for (e = s->entries; e; e = e->next)
@@ -327,16 +328,16 @@ int rss_config_save(rss_config_t *cfg, const char *path)
 
         /* Section header (skip for global section) */
         if (s->name[0] != '\0') {
-            /* Ensure space: [name]\n + entries */
             int need = off + (int)strlen(s->name) + 4;
             if (need > buf_size) {
-                buf_size = need + 4096;
-                char *nb = realloc(buf, buf_size);
+                int new_size = need + 4096;
+                char *nb = realloc(buf, new_size);
                 if (!nb) {
                     free(ents);
-                    continue;
+                    goto out;
                 }
                 buf = nb;
+                buf_size = new_size;
             }
             if (off > 0)
                 buf[off++] = '\n'; /* blank line between sections */
@@ -347,11 +348,14 @@ int rss_config_save(rss_config_t *cfg, const char *path)
         for (j = nent - 1; j >= 0; j--) {
             int need = off + (int)strlen(ents[j]->key) + (int)strlen(ents[j]->value) + 8;
             if (need > buf_size) {
-                buf_size = need + 4096;
-                char *nb = realloc(buf, buf_size);
-                if (!nb)
-                    break;
+                int new_size = need + 4096;
+                char *nb = realloc(buf, new_size);
+                if (!nb) {
+                    free(ents);
+                    goto out;
+                }
                 buf = nb;
+                buf_size = new_size;
             }
             off += snprintf(buf + off, buf_size - off, "%s = %s\n", ents[j]->key, ents[j]->value);
         }
@@ -359,9 +363,10 @@ int rss_config_save(rss_config_t *cfg, const char *path)
         free(ents);
     }
 
-    free(secs);
+    ret = rss_write_file_atomic(path, buf, off);
 
-    int ret = rss_write_file_atomic(path, buf, off);
+out:
+    free(secs);
     free(buf);
     return ret;
 }
