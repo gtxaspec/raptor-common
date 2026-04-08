@@ -23,7 +23,7 @@ static rss_log_target_t s_target = RSS_LOG_TARGET_STDERR;
 static FILE *s_fp = NULL; /* file target */
 
 static const char *level_names[] = {
-    "FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE",
+    "FATAL", "ERROR", "WARN ", "INFO ", "DEBUG", "TRACE",
 };
 
 /* Map RSS log levels to syslog priorities */
