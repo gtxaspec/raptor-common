@@ -70,20 +70,15 @@ rss_log_level_t rss_log_get_level(void)
     return s_level;
 }
 
-void rss_log(rss_log_level_t level, const char *file, int line, const char *fmt, ...)
+void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt, va_list ap)
 {
     if (level > s_level)
         return;
 
-    va_list ap;
-    va_start(ap, fmt);
-
     if (s_target == RSS_LOG_TARGET_SYSLOG) {
-        /* Syslog handles its own timestamping */
         char msg[512];
         vsnprintf(msg, sizeof(msg), fmt, ap);
         syslog(syslog_prio[level], "[%s] %s:%d: %s", level_names[level], file, line, msg);
-        va_end(ap);
         return;
     }
 
@@ -111,6 +106,12 @@ void rss_log(rss_log_level_t level, const char *file, int line, const char *fmt,
 
     fflush(out);
     funlockfile(out);
+}
 
+void rss_log(rss_log_level_t level, const char *file, int line, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    rss_vlog(level, file, line, fmt, ap);
     va_end(ap);
 }
