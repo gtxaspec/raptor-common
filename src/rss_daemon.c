@@ -7,7 +7,6 @@
 
 #include "rss_common.h"
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -225,11 +224,12 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
             debug = true;
             break;
         case 'h':
-            fprintf(stderr, "Usage: %s [-c config] [-f] [-d] [-h]\n"
-                            "  -c <file>   Config file (default: /etc/raptor.conf)\n"
-                            "  -f          Run in foreground\n"
-                            "  -d          Debug logging\n"
-                            "  -h          Show this help\n",
+            fprintf(stderr,
+                    "Usage: %s [-c config] [-f] [-d] [-h]\n"
+                    "  -c <file>   Config file (default: /etc/raptor.conf)\n"
+                    "  -f          Run in foreground\n"
+                    "  -d          Debug logging\n"
+                    "  -h          Show this help\n",
                     name);
             return 1; /* clean exit */
         default:
@@ -259,18 +259,28 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
         const char *cfg_file = rss_config_get_str(ctx->cfg, "log", "file", "");
 
         rss_log_level_t level = RSS_LOG_INFO;
-        if (strcmp(cfg_level, "fatal") == 0) level = RSS_LOG_FATAL;
-        else if (strcmp(cfg_level, "error") == 0) level = RSS_LOG_ERROR;
-        else if (strcmp(cfg_level, "warn") == 0) level = RSS_LOG_WARN;
-        else if (strcmp(cfg_level, "info") == 0) level = RSS_LOG_INFO;
-        else if (strcmp(cfg_level, "debug") == 0) level = RSS_LOG_DEBUG;
-        else if (strcmp(cfg_level, "trace") == 0) level = RSS_LOG_TRACE;
-        if (debug) level = RSS_LOG_DEBUG; /* -d flag overrides */
+        if (strcmp(cfg_level, "fatal") == 0)
+            level = RSS_LOG_FATAL;
+        else if (strcmp(cfg_level, "error") == 0)
+            level = RSS_LOG_ERROR;
+        else if (strcmp(cfg_level, "warn") == 0)
+            level = RSS_LOG_WARN;
+        else if (strcmp(cfg_level, "info") == 0)
+            level = RSS_LOG_INFO;
+        else if (strcmp(cfg_level, "debug") == 0)
+            level = RSS_LOG_DEBUG;
+        else if (strcmp(cfg_level, "trace") == 0)
+            level = RSS_LOG_TRACE;
+        if (debug)
+            level = RSS_LOG_DEBUG; /* -d flag overrides */
 
         rss_log_target_t target = RSS_LOG_TARGET_SYSLOG;
-        if (foreground) target = RSS_LOG_TARGET_STDERR; /* -f overrides */
-        else if (strcmp(cfg_target, "stderr") == 0) target = RSS_LOG_TARGET_STDERR;
-        else if (strcmp(cfg_target, "file") == 0) target = RSS_LOG_TARGET_FILE;
+        if (foreground)
+            target = RSS_LOG_TARGET_STDERR; /* -f overrides */
+        else if (strcmp(cfg_target, "stderr") == 0)
+            target = RSS_LOG_TARGET_STDERR;
+        else if (strcmp(cfg_target, "file") == 0)
+            target = RSS_LOG_TARGET_FILE;
 
         rss_log_init(name, level, target, cfg_file[0] ? cfg_file : NULL);
     }

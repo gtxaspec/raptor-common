@@ -192,12 +192,12 @@ int rss_json_get_int(const char *json, const char *key, int *out);
  * ================================================================ */
 
 typedef struct {
-	const char *name;           /* daemon name (for logging, PID file) */
-	rss_config_t *cfg;          /* loaded config (caller must free) */
-	const char *config_path;    /* config file path used */
-	volatile sig_atomic_t *running; /* signal-controlled run flag */
-	bool foreground;
-	bool debug;
+    const char *name;               /* daemon name (for logging, PID file) */
+    rss_config_t *cfg;              /* loaded config (caller must free) */
+    const char *config_path;        /* config file path used */
+    volatile sig_atomic_t *running; /* signal-controlled run flag */
+    bool foreground;
+    bool debug;
 } rss_daemon_ctx_t;
 
 /* Standard daemon startup. Parses args, inits logging, loads config,
@@ -210,7 +210,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
  * by the raptor Makefile) so the hash isn't baked into librss_common.a. */
 extern const char *rss_build_hash;
 extern const char *rss_build_time;
-#define RSS_BANNER(name) \
+#define RSS_BANNER(name)                                                                           \
     RSS_INFO("Raptor Streaming System — %s [%s] built %s", (name), rss_build_hash, rss_build_time)
 
 /* ================================================================
@@ -223,7 +223,7 @@ extern const char *rss_build_time;
  * ================================================================ */
 
 int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_size,
-			   rss_config_t *cfg, const char *config_path);
+                           rss_config_t *cfg, const char *config_path);
 
 /* ================================================================
  * File Utilities
