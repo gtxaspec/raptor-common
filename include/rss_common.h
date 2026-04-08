@@ -229,7 +229,7 @@ static inline int rss_ctrl_resp(char *buf, int size, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, size, fmt, ap);
+    vsnprintf(buf, (size_t)size, fmt, ap);
     va_end(ap);
     return (int)strlen(buf);
 }
