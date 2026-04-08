@@ -225,6 +225,27 @@ extern const char *rss_build_time;
 int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_size,
                            rss_config_t *cfg, const char *config_path);
 
+/* Format a control socket response. Returns byte count for handler return. */
+__attribute__((format(printf, 3, 4)))
+static inline int rss_ctrl_resp(char *buf, int size, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, size, fmt, ap);
+    va_end(ap);
+    return (int)strlen(buf);
+}
+
+static inline int rss_ctrl_resp_ok(char *buf, int size)
+{
+    return rss_ctrl_resp(buf, size, "{\"status\":\"ok\"}");
+}
+
+static inline int rss_ctrl_resp_error(char *buf, int size, const char *reason)
+{
+    return rss_ctrl_resp(buf, size, "{\"status\":\"error\",\"reason\":\"%s\"}", reason);
+}
+
 /* ================================================================
  * File Utilities
  * ================================================================ */

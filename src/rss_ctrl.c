@@ -18,21 +18,20 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
             rss_json_get_str(cmd_json, "key", key, sizeof(key)) == 0) {
             const char *v = rss_config_get_str(cfg, section, key, NULL);
             if (v)
-                snprintf(resp_buf, resp_buf_size, "%s", v);
-            else
-                resp_buf[0] = '\0';
+                return rss_ctrl_resp(resp_buf, resp_buf_size, "%s", v);
+            resp_buf[0] = '\0';
         } else {
             resp_buf[0] = '\0';
         }
-        return (int)strlen(resp_buf);
+        return 0;
     }
 
     if (strstr(cmd_json, "\"config-save\"")) {
         int ret = rss_config_save(cfg, config_path);
-        snprintf(resp_buf, resp_buf_size, "{\"status\":\"%s\"}", ret == 0 ? "ok" : "error");
         if (ret == 0)
             RSS_INFO("running config saved to %s", config_path);
-        return (int)strlen(resp_buf);
+        return rss_ctrl_resp(resp_buf, resp_buf_size, "{\"status\":\"%s\"}",
+                             ret == 0 ? "ok" : "error");
     }
 
     return -1; /* not handled */
