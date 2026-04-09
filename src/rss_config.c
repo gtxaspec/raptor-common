@@ -66,7 +66,8 @@ static void add_entry(rss_config_section_t *sec, const char *key, const char *va
     rss_config_entry_t *e;
     for (e = sec->entries; e; e = e->next) {
         if (strcasecmp(e->key, key) == 0) {
-            rss_strlcpy(e->value, value, (int)sizeof(e->value));
+            if (rss_strlcpy(e->value, value, sizeof(e->value)) >= sizeof(e->value))
+                RSS_WARN("config: value truncated for key '%s' (max %d)", key, MAX_VAL - 1);
             return;
         }
     }
@@ -74,8 +75,9 @@ static void add_entry(rss_config_section_t *sec, const char *key, const char *va
     e = calloc(1, sizeof(*e));
     if (!e)
         return;
-    rss_strlcpy(e->key, key, (int)sizeof(e->key));
-    rss_strlcpy(e->value, value, (int)sizeof(e->value));
+    rss_strlcpy(e->key, key, sizeof(e->key));
+    if (rss_strlcpy(e->value, value, sizeof(e->value)) >= sizeof(e->value))
+        RSS_WARN("config: value truncated for key '%s' (max %d)", key, MAX_VAL - 1);
     e->next = sec->entries;
     sec->entries = e;
 }
