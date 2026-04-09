@@ -43,7 +43,7 @@ static const int syslog_prio[] = {
 void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target_t target,
                   const char *log_file)
 {
-    rss_strlcpy(s_daemon_name, daemon_name ? daemon_name : "rss", (int)sizeof(s_daemon_name));
+    rss_strlcpy(s_daemon_name, daemon_name ? daemon_name : "rss", sizeof(s_daemon_name));
     s_level = level;
     s_target = target;
 

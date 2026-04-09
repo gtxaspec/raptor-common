@@ -156,8 +156,9 @@ char *rss_format_timestamp_fmt(char *buf, int buf_size, const char *fmt);
  * String Utilities
  * ================================================================ */
 
-/* Safe string copy that always NUL-terminates. Returns dst. */
-char *rss_strlcpy(char *dst, const char *src, int dst_size);
+/* Safe string copy that always NUL-terminates. Returns src length
+ * (like BSD strlcpy): if retval >= dst_size, truncation occurred. */
+size_t rss_strlcpy(char *dst, const char *src, size_t dst_size);
 
 /* Trim leading/trailing whitespace in-place. Returns s. */
 char *rss_trim(char *s);

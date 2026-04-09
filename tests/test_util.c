@@ -10,8 +10,8 @@
 TEST strlcpy_basic(void)
 {
 	char buf[10];
-	char *ret = rss_strlcpy(buf, "hello", sizeof(buf));
-	ASSERT_EQ(buf, ret);
+	size_t ret = rss_strlcpy(buf, "hello", sizeof(buf));
+	ASSERT_EQ(5u, ret); /* src length */
 	ASSERT_STR_EQ("hello", buf);
 	PASS();
 }
@@ -19,7 +19,9 @@ TEST strlcpy_basic(void)
 TEST strlcpy_truncate(void)
 {
 	char buf[6];
-	rss_strlcpy(buf, "hello world", sizeof(buf));
+	size_t ret = rss_strlcpy(buf, "hello world", sizeof(buf));
+	ASSERT_EQ(11u, ret); /* src length > dst_size = truncated */
+	ASSERT(ret >= sizeof(buf)); /* truncation indicator */
 	ASSERT_STR_EQ("hello", buf);
 	PASS();
 }

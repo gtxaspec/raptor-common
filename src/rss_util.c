@@ -58,21 +58,27 @@ char *rss_format_timestamp_fmt(char *buf, int buf_size, const char *fmt)
  * String Utilities
  * ================================================================ */
 
-char *rss_strlcpy(char *dst, const char *src, int dst_size)
+size_t rss_strlcpy(char *dst, const char *src, size_t dst_size)
 {
     if (!dst || dst_size < 1)
-        return dst;
+        return 0;
 
     if (!src) {
         dst[0] = '\0';
-        return dst;
+        return 0;
     }
 
-    int i;
+    size_t i;
     for (i = 0; i < dst_size - 1 && src[i] != '\0'; i++)
         dst[i] = src[i];
     dst[i] = '\0';
-    return dst;
+
+    /* Return total src length (like BSD strlcpy) for truncation detection:
+     * if return value >= dst_size, truncation occurred. */
+    size_t src_len = i;
+    while (src[src_len] != '\0')
+        src_len++;
+    return src_len;
 }
 
 char *rss_trim(char *s)

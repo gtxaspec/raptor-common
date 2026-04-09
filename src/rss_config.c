@@ -54,7 +54,7 @@ static rss_config_section_t *find_or_create_section(rss_config_t *cfg, const cha
     s = calloc(1, sizeof(*s));
     if (!s)
         return NULL;
-    rss_strlcpy(s->name, name, (int)sizeof(s->name));
+    rss_strlcpy(s->name, name, sizeof(s->name));
     s->next = cfg->sections;
     cfg->sections = s;
     return s;
@@ -131,7 +131,7 @@ rss_config_t *rss_config_load(const char *path)
             char *end = strchr(s, ']');
             if (end) {
                 *end = '\0';
-                rss_strlcpy(current_section, rss_trim(s + 1), (int)sizeof(current_section));
+                rss_strlcpy(current_section, rss_trim(s + 1), sizeof(current_section));
             }
             continue;
         }
