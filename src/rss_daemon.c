@@ -54,7 +54,10 @@ static int write_pid_file(const char *name)
         return -1;
     char buf[16];
     int len = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
-    write(fd, buf, (size_t)len);
+    if (write(fd, buf, (size_t)len) != len) {
+        close(fd);
+        return -1;
+    }
     close(fd);
     return 0;
 }
