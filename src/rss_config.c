@@ -199,14 +199,38 @@ const char *rss_config_get_str(rss_config_t *cfg, const char *section, const cha
                 return e->value;
         }
     }
+
+    /* Populate default into config so config-get-section shows all resolved values.
+     * Only when default_val is non-NULL (callers with NULL default don't want storage). */
+    if (default_val) {
+        rss_config_set_str(cfg, section, key, default_val);
+        /* Find the stored entry to return a stable pointer */
+        rss_config_section_t *ds;
+        for (ds = cfg->sections; ds; ds = ds->next) {
+            if (strcasecmp(ds->name, sec_name) != 0)
+                continue;
+            rss_config_entry_t *de;
+            for (de = ds->entries; de; de = de->next) {
+                if (strcasecmp(de->key, key) == 0)
+                    return de->value;
+            }
+        }
+    }
     return default_val;
 }
 
 int rss_config_get_int(rss_config_t *cfg, const char *section, const char *key, int default_val)
 {
     const char *val = rss_config_get_str(cfg, section, key, NULL);
-    if (!val)
+    if (!val) {
+        /* Store default so config-get-section shows it */
+        if (cfg) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%d", default_val);
+            rss_config_set_str(cfg, section, key, buf);
+        }
         return default_val;
+    }
 
     char *end;
     long v = strtol(val, &end, 0);
@@ -218,8 +242,12 @@ int rss_config_get_int(rss_config_t *cfg, const char *section, const char *key, 
 bool rss_config_get_bool(rss_config_t *cfg, const char *section, const char *key, bool default_val)
 {
     const char *val = rss_config_get_str(cfg, section, key, NULL);
-    if (!val)
+    if (!val) {
+        /* Store default so config-get-section shows it */
+        if (cfg)
+            rss_config_set_str(cfg, section, key, default_val ? "true" : "false");
         return default_val;
+    }
 
     if (strcasecmp(val, "true") == 0 || strcasecmp(val, "yes") == 0 || strcasecmp(val, "on") == 0 ||
         strcmp(val, "1") == 0)
