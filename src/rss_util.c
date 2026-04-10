@@ -13,6 +13,7 @@
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
+#include "cJSON.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -132,22 +133,19 @@ int rss_json_get_str(const char *json, const char *key, char *buf, int buf_size)
 {
     if (!json || !key || !buf || buf_size < 1)
         return -1;
-    if (strlen(key) > 54) /* pattern: "key":"  must fit in 64 bytes */
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root)
         return -1;
-    char pattern[64];
-    snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
-    const char *p = strstr(json, pattern);
-    if (!p)
+
+    cJSON *val = cJSON_GetObjectItemCaseSensitive(root, key);
+    if (!cJSON_IsString(val) || !val->valuestring) {
+        cJSON_Delete(root);
         return -1;
-    p += strlen(pattern);
-    const char *end = strchr(p, '"');
-    if (!end || end < p)
-        return -1;
-    int len = (int)(end - p);
-    if (len >= buf_size)
-        len = buf_size - 1;
-    memcpy(buf, p, (size_t)len);
-    buf[len] = '\0';
+    }
+
+    rss_strlcpy(buf, val->valuestring, (size_t)buf_size);
+    cJSON_Delete(root);
     return 0;
 }
 
@@ -155,23 +153,19 @@ int rss_json_get_int(const char *json, const char *key, int *out)
 {
     if (!json || !key || !out)
         return -1;
-    if (strlen(key) > 56) /* pattern: "key":  must fit in 64 bytes */
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root)
         return -1;
-    char pattern[64];
-    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
-    const char *p = strstr(json, pattern);
-    if (!p)
+
+    cJSON *val = cJSON_GetObjectItemCaseSensitive(root, key);
+    if (!cJSON_IsNumber(val)) {
+        cJSON_Delete(root);
         return -1;
-    p += strlen(pattern);
-    while (*p == ' ')
-        p++;
-    char *end;
-    long val = strtol(p, &end, 10);
-    if (end == p)
-        return -1;
-    if (val > INT_MAX || val < INT_MIN)
-        return -1;
-    *out = (int)val;
+    }
+
+    *out = val->valueint;
+    cJSON_Delete(root);
     return 0;
 }
 

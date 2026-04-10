@@ -8,63 +8,80 @@
 #include "rss_common.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "cJSON.h"
 
-/* Callback for config-get-section: append "key":"value" to JSON buffer */
-typedef struct {
-    char *buf;
-    int off;
-    int size;
-    int first;
-} section_dump_ctx_t;
-
+/* Callback for config-get-section: add key/value to cJSON object */
 static void section_dump_cb(const char *key, const char *value, void *userdata)
 {
-    section_dump_ctx_t *c = userdata;
-    if (c->off >= c->size - 4)
-        return;
-    int n = snprintf(c->buf + c->off, c->size - c->off, "%s\"%s\":\"%s\"",
-                     c->first ? "" : ",", key, value);
-    if (n > 0 && c->off + n < c->size)
-        c->off += n;
-    c->first = 0;
+    cJSON *keys_obj = userdata;
+    cJSON_AddStringToObject(keys_obj, key, value);
 }
 
 int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_size,
                            rss_config_t *cfg, const char *config_path)
 {
-    /* config-get-section must be checked BEFORE config-get (substring match) */
-    if (strstr(cmd_json, "\"config-get-section\"")) {
-        char section[64];
-        if (rss_json_get_str(cmd_json, "section", section, sizeof(section)) == 0) {
-            int off = snprintf(resp_buf, resp_buf_size,
-                               "{\"status\":\"ok\",\"section\":\"%s\",\"keys\":{", section);
-            section_dump_ctx_t ctx = {resp_buf, off, resp_buf_size, 1};
-            rss_config_foreach(cfg, section, section_dump_cb, &ctx);
-            off = ctx.off;
-            if (off < resp_buf_size - 2)
-                snprintf(resp_buf + off, resp_buf_size - off, "}}");
+    cJSON *root = cJSON_Parse(cmd_json);
+    if (!root)
+        return -1;
+
+    cJSON *cmd_obj = cJSON_GetObjectItemCaseSensitive(root, "cmd");
+    if (!cJSON_IsString(cmd_obj) || !cmd_obj->valuestring) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    const char *cmd = cmd_obj->valuestring;
+
+    if (strcmp(cmd, "config-get-section") == 0) {
+        cJSON *sec_obj = cJSON_GetObjectItemCaseSensitive(root, "section");
+        if (cJSON_IsString(sec_obj) && sec_obj->valuestring) {
+            const char *section = sec_obj->valuestring;
+            cJSON *resp = cJSON_CreateObject();
+            if (!resp) {
+                rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
+                cJSON_Delete(root);
+                return (int)strlen(resp_buf);
+            }
+            cJSON_AddStringToObject(resp, "status", "ok");
+            cJSON_AddStringToObject(resp, "section", section);
+            cJSON *keys_obj = cJSON_AddObjectToObject(resp, "keys");
+            if (keys_obj)
+                rss_config_foreach(cfg, section, section_dump_cb, keys_obj);
+            char *s = cJSON_PrintUnformatted(resp);
+            if (s) {
+                rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
+                free(s);
+            } else {
+                rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
+            }
+            cJSON_Delete(resp);
         } else {
             rss_ctrl_resp_error(resp_buf, resp_buf_size, "need section");
         }
+        cJSON_Delete(root);
         return (int)strlen(resp_buf);
     }
 
-    if (strstr(cmd_json, "\"config-get\"")) {
-        char section[64], key[64];
-        if (rss_json_get_str(cmd_json, "section", section, sizeof(section)) == 0 &&
-            rss_json_get_str(cmd_json, "key", key, sizeof(key)) == 0) {
-            const char *v = rss_config_get_str(cfg, section, key, NULL);
+    if (strcmp(cmd, "config-get") == 0) {
+        cJSON *sec_obj = cJSON_GetObjectItemCaseSensitive(root, "section");
+        cJSON *key_obj = cJSON_GetObjectItemCaseSensitive(root, "key");
+        if (cJSON_IsString(sec_obj) && cJSON_IsString(key_obj)) {
+            const char *v =
+                rss_config_get_str(cfg, sec_obj->valuestring, key_obj->valuestring, NULL);
+            cJSON_Delete(root);
             if (v)
                 return rss_ctrl_resp(resp_buf, resp_buf_size, "%s", v);
             resp_buf[0] = '\0';
         } else {
+            cJSON_Delete(root);
             resp_buf[0] = '\0';
         }
         return 0;
     }
 
-    if (strstr(cmd_json, "\"config-save\"")) {
+    if (strcmp(cmd, "config-save") == 0) {
+        cJSON_Delete(root);
         int ret = rss_config_save(cfg, config_path);
         if (ret == 0)
             RSS_INFO("running config saved to %s", config_path);
@@ -72,5 +89,6 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
                              ret == 0 ? "ok" : "error");
     }
 
+    cJSON_Delete(root);
     return -1; /* not handled */
 }
