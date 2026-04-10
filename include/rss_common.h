@@ -66,7 +66,7 @@ void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt
  * Configuration
  *
  * Simple key=value config parser. Supports sections [section],
- * comments (#), and inline comments. No dependencies on json-c.
+ * comments (#), and inline comments.
  *
  * Config file format:
  *   [section]
@@ -171,11 +171,10 @@ bool rss_starts_with(const char *s, const char *prefix);
 bool rss_secure_compare(const char *a, const char *b);
 
 /* ================================================================
- * JSON Helpers (lightweight, no allocations)
+ * JSON Helpers (backed by vendored cJSON)
  *
- * Simple key lookup in flat JSON strings from control socket commands.
- * Not a full parser — handles the {"key":"value","key2":123} format
- * used by raptorctl and inter-daemon IPC.
+ * Key lookup in JSON strings from control socket commands.
+ * Used by raptorctl and inter-daemon IPC.
  * ================================================================ */
 
 /* Extract string value for "key":"value". Returns 0 on success, -1 if not found. */
