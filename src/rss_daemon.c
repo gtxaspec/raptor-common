@@ -80,8 +80,10 @@ int rss_daemonize(const char *name, bool already_daemon)
         pid_t pid = fork();
         if (pid < 0)
             return -1;
-        if (pid > 0)
-            _exit(0); /* parent exits */
+        if (pid > 0) {
+            fprintf(stderr, "%s launched\n", name);
+            _exit(0);
+        }
 
         /* New session leader */
         if (setsid() < 0)
