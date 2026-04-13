@@ -343,6 +343,341 @@ TEST config_save_defaults_not_dirty(void)
 	PASS();
 }
 
+/*
+ * Multi-daemon config save stress test.
+ *
+ * Simulates the real raptor daemon lifecycle: 7 daemons share one config
+ * file, each owns different sections, runtime changes are made via
+ * rss_config_set_*, and raptorctl broadcasts config-save to all daemons
+ * sequentially.  We run 100 cycles and verify no data loss or corruption.
+ */
+
+#define STRESS_PATH "/tmp/rss_test_config_stress.ini"
+#define NUM_DAEMONS 7
+#define NUM_CYCLES 100
+
+/* Daemon section ownership — mirrors real raptor */
+/* Daemon names for documentation — matches daemon_sections[] order */
+/* static const char *daemon_names[] = {"rvd","rsd","rad","rod","rhd","ric","rwd"}; */
+
+/* Each daemon's owned sections */
+static const char *daemon_sections[][4] = {
+	{"stream0", "stream1", "image", NULL},   /* rvd */
+	{"rtsp", NULL, NULL, NULL},              /* rsd */
+	{"audio", NULL, NULL, NULL},             /* rad */
+	{"osd", NULL, NULL, NULL},               /* rod */
+	{"http", NULL, NULL, NULL},              /* rhd */
+	{"ircut", NULL, NULL, NULL},             /* ric */
+	{"webrtc", "webtorrent", NULL, NULL},    /* rwd */
+};
+
+/* Simulated keys per section */
+static const char *section_keys[][4] = {
+	{"fps", "bitrate", "gop", NULL},            /* stream0 */
+	{"fps", "bitrate", NULL, NULL},             /* stream1 */
+	{"brightness", "contrast", NULL, NULL},     /* image */
+	{"port", "max_clients", NULL, NULL},        /* rtsp */
+	{"codec", "volume", "gain", NULL},          /* audio */
+	{"text_string", "font_color", NULL, NULL},  /* osd */
+	{"port", "max_clients", NULL, NULL},        /* http */
+	{"mode", NULL, NULL, NULL},                 /* ircut */
+	{"udp_port", "http_port", NULL, NULL},      /* webrtc */
+	{"enabled", NULL, NULL, NULL},              /* webtorrent */
+};
+
+/* Map section name → key list index */
+static const char *all_sections[] = {
+	"stream0", "stream1", "image", "rtsp", "audio",
+	"osd", "http", "ircut", "webrtc", "webtorrent"
+};
+
+static int find_section_idx(const char *name)
+{
+	for (int i = 0; i < 10; i++) {
+		if (strcmp(all_sections[i], name) == 0)
+			return i;
+	}
+	return -1;
+}
+
+TEST config_save_stress_multi_daemon(void)
+{
+	/* Write initial config with one key per section */
+	const char *initial =
+		"[stream0]\nfps = 25\nbitrate = 3000000\ngop = 50\n"
+		"[stream1]\nfps = 25\nbitrate = 1000000\n"
+		"[image]\nbrightness = 128\ncontrast = 128\n"
+		"[rtsp]\nport = 554\nmax_clients = 4\n"
+		"[audio]\ncodec = aac\nvolume = 80\ngain = 25\n"
+		"[osd]\ntext_string = Camera\nfont_color = 0xFFFFFFFF\n"
+		"[http]\nport = 8080\nmax_clients = 4\n"
+		"[ircut]\nmode = auto\n"
+		"[webrtc]\nudp_port = 8443\nhttp_port = 8554\n"
+		"[webtorrent]\nenabled = false\n"
+		"[log]\nlevel = info\n";
+
+	rss_config_t *seed = load_ini(initial);
+	ASSERT(seed);
+	/* Mark all dirty for initial write */
+	for (int i = 0; i < 10; i++) {
+		for (int k = 0; section_keys[i][k]; k++)
+			rss_config_set_str(seed, all_sections[i], section_keys[i][k],
+					   rss_config_get_str(seed, all_sections[i],
+							      section_keys[i][k], ""));
+	}
+	rss_config_set_str(seed, "log", "level", "info");
+	ASSERT_EQ(0, rss_config_save(seed, STRESS_PATH));
+	rss_config_free(seed);
+
+	/*
+	 * Track expected values. Each cycle, one or more daemons change a
+	 * value, then all daemons save sequentially. After each cycle we
+	 * reload and verify every key matches expectations.
+	 */
+	char expected[10][4][64]; /* [section_idx][key_idx][value] */
+
+	/* Initialize expected from initial config */
+	const char *init_vals[10][4] = {
+		{"25", "3000000", "50", NULL},       /* stream0 */
+		{"25", "1000000", NULL, NULL},       /* stream1 */
+		{"128", "128", NULL, NULL},          /* image */
+		{"554", "4", NULL, NULL},            /* rtsp */
+		{"aac", "80", "25", NULL},           /* audio */
+		{"Camera", "0xFFFFFFFF", NULL, NULL},/* osd */
+		{"8080", "4", NULL, NULL},           /* http */
+		{"auto", NULL, NULL, NULL},          /* ircut */
+		{"8443", "8554", NULL, NULL},        /* webrtc */
+		{"false", NULL, NULL, NULL},         /* webtorrent */
+	};
+
+	for (int s = 0; s < 10; s++)
+		for (int k = 0; k < 4 && init_vals[s][k]; k++)
+			snprintf(expected[s][k], 64, "%s", init_vals[s][k]);
+
+	for (int cycle = 0; cycle < NUM_CYCLES; cycle++) {
+		/* Load config for each daemon (simulates daemon startup or
+		 * long-running daemon that loaded at boot) */
+		rss_config_t *daemons[NUM_DAEMONS];
+		for (int d = 0; d < NUM_DAEMONS; d++) {
+			daemons[d] = rss_config_load(STRESS_PATH);
+			ASSERT(daemons[d]);
+
+			/* Simulate each daemon reading defaults for its sections
+			 * (populates in-memory config, must NOT be dirty) */
+			for (int si = 0; daemon_sections[d][si]; si++) {
+				int idx = find_section_idx(daemon_sections[d][si]);
+				if (idx < 0) continue;
+				for (int k = 0; section_keys[idx][k]; k++)
+					(void)rss_config_get_str(daemons[d],
+						all_sections[idx], section_keys[idx][k], "default");
+			}
+
+			/* Also read sections owned by OTHER daemons (simulates
+			 * shared config load — all sections are in memory) */
+			(void)rss_config_get_str(daemons[d], "log", "level", "info");
+		}
+
+		/* Pick which daemons modify values this cycle.
+		 * Rotate: each cycle, 1-3 daemons make changes. */
+		int modifiers[] = {
+			cycle % NUM_DAEMONS,
+			(cycle * 3 + 1) % NUM_DAEMONS,
+			(cycle * 7 + 2) % NUM_DAEMONS
+		};
+		int nmod = 1 + (cycle % 3); /* 1, 2, or 3 daemons modify */
+
+		for (int m = 0; m < nmod; m++) {
+			int d = modifiers[m];
+			/* Modify the first key of the daemon's first section */
+			const char *sec = daemon_sections[d][0];
+			if (!sec) continue;
+			int idx = find_section_idx(sec);
+			if (idx < 0 || !section_keys[idx][0]) continue;
+
+			char val[64];
+			snprintf(val, sizeof(val), "%d", cycle * 100 + d);
+			rss_config_set_str(daemons[d], sec, section_keys[idx][0], val);
+			snprintf(expected[idx][0], 64, "%s", val);
+		}
+
+		/* All daemons save sequentially (like raptorctl config save) */
+		for (int d = 0; d < NUM_DAEMONS; d++) {
+			ASSERT_EQ(0, rss_config_save(daemons[d], STRESS_PATH));
+			rss_config_free(daemons[d]);
+		}
+
+		/* Verify: reload file and check every expected key */
+		rss_config_t *verify = rss_config_load(STRESS_PATH);
+		ASSERT(verify);
+
+		for (int s = 0; s < 10; s++) {
+			for (int k = 0; section_keys[s][k]; k++) {
+				const char *got = rss_config_get_str(verify,
+					all_sections[s], section_keys[s][k], NULL);
+				ASSERTm("key missing after save cycle",
+					got != NULL);
+				if (strcmp(got, expected[s][k]) != 0) {
+					fprintf(stderr,
+						"MISMATCH cycle %d: [%s] %s = '%s' (expected '%s')\n",
+						cycle, all_sections[s], section_keys[s][k],
+						got, expected[s][k]);
+					FAILm("value mismatch after save cycle");
+				}
+			}
+		}
+
+		/* Also verify [log] section wasn't clobbered */
+		ASSERT_STR_EQ("info", rss_config_get_str(verify, "log", "level", ""));
+		rss_config_free(verify);
+	}
+
+	unlink(STRESS_PATH);
+	cleanup();
+	PASS();
+}
+
+/* Rapid set-then-save on the same key — value must always reflect latest */
+TEST config_save_rapid_overwrite(void)
+{
+	const char *path = "/tmp/rss_test_config_rapid.ini";
+
+	rss_config_t *init = load_ini("[stream0]\nfps = 25\n");
+	ASSERT(init);
+	rss_config_set_str(init, "stream0", "fps", "25");
+	ASSERT_EQ(0, rss_config_save(init, path));
+	rss_config_free(init);
+
+	for (int i = 0; i < 100; i++) {
+		rss_config_t *cfg = rss_config_load(path);
+		ASSERT(cfg);
+
+		char val[16];
+		snprintf(val, sizeof(val), "%d", i + 1);
+		rss_config_set_str(cfg, "stream0", "fps", val);
+		ASSERT_EQ(0, rss_config_save(cfg, path));
+		rss_config_free(cfg);
+
+		/* Immediately reload and verify */
+		rss_config_t *check = rss_config_load(path);
+		ASSERT(check);
+		ASSERT_EQ(i + 1, rss_config_get_int(check, "stream0", "fps", -1));
+		rss_config_free(check);
+	}
+
+	unlink(path);
+	cleanup();
+	PASS();
+}
+
+/* New sections created by set_str must survive cross-daemon saves */
+TEST config_save_new_section_survives(void)
+{
+	const char *path = "/tmp/rss_test_config_newsec.ini";
+
+	/* Start with minimal config — no [stream0] */
+	rss_config_t *init = load_ini("[audio]\ncodec = aac\n");
+	ASSERT(init);
+	rss_config_set_str(init, "audio", "codec", "aac");
+	ASSERT_EQ(0, rss_config_save(init, path));
+	rss_config_free(init);
+
+	for (int i = 0; i < 50; i++) {
+		/* Daemon A creates a new section with a new key */
+		rss_config_t *da = rss_config_load(path);
+		ASSERT(da);
+		char sec[32], val[16];
+		snprintf(sec, sizeof(sec), "dynamic%d", i);
+		snprintf(val, sizeof(val), "%d", i * 10);
+		rss_config_set_str(da, sec, "value", val);
+		ASSERT_EQ(0, rss_config_save(da, path));
+		rss_config_free(da);
+
+		/* Daemon B saves with no changes — must not clobber new section */
+		rss_config_t *db = rss_config_load(path);
+		ASSERT(db);
+		(void)rss_config_get_str(db, "audio", "codec", "aac");
+		ASSERT_EQ(0, rss_config_save(db, path));
+		rss_config_free(db);
+
+		/* Verify new section survived */
+		rss_config_t *check = rss_config_load(path);
+		ASSERT(check);
+		ASSERT_EQ(i * 10, rss_config_get_int(check, sec, "value", -1));
+		ASSERT_STR_EQ("aac", rss_config_get_str(check, "audio", "codec", ""));
+		rss_config_free(check);
+	}
+
+	/* Verify ALL dynamic sections survived */
+	rss_config_t *final = rss_config_load(path);
+	ASSERT(final);
+	for (int i = 0; i < 50; i++) {
+		char sec[32];
+		snprintf(sec, sizeof(sec), "dynamic%d", i);
+		ASSERT_EQ(i * 10, rss_config_get_int(final, sec, "value", -1));
+	}
+	ASSERT_STR_EQ("aac", rss_config_get_str(final, "audio", "codec", ""));
+	rss_config_free(final);
+
+	unlink(path);
+	cleanup();
+	PASS();
+}
+
+/* Daemon with no dirty keys must not corrupt the file */
+TEST config_save_no_dirty_noop(void)
+{
+	const char *path = "/tmp/rss_test_config_noop.ini";
+
+	rss_config_t *init = load_ini(
+		"[stream0]\nfps = 25\nbitrate = 3000000\n"
+		"[audio]\ncodec = aac\nvolume = 80\n");
+	ASSERT(init);
+	rss_config_set_str(init, "stream0", "fps", "25");
+	rss_config_set_str(init, "stream0", "bitrate", "3000000");
+	rss_config_set_str(init, "audio", "codec", "aac");
+	rss_config_set_str(init, "audio", "volume", "80");
+	ASSERT_EQ(0, rss_config_save(init, path));
+	rss_config_free(init);
+
+	/* 100 cycles of load→read defaults→save with NO set_str */
+	for (int i = 0; i < 100; i++) {
+		rss_config_t *cfg = rss_config_load(path);
+		ASSERT(cfg);
+		/* Read lots of defaults — none should be dirty */
+		(void)rss_config_get_int(cfg, "stream0", "gop", 50);
+		(void)rss_config_get_bool(cfg, "stream0", "enabled", true);
+		(void)rss_config_get_str(cfg, "audio", "sample_rate", "16000");
+		(void)rss_config_get_int(cfg, "newdaemon", "newkey", 999);
+		ASSERT_EQ(0, rss_config_save(cfg, path));
+		rss_config_free(cfg);
+	}
+
+	/* File should still have only the original 4 keys */
+	rss_config_t *final = rss_config_load(path);
+	ASSERT(final);
+	ASSERT_EQ(25, rss_config_get_int(final, "stream0", "fps", -1));
+	ASSERT_EQ(3000000, rss_config_get_int(final, "stream0", "bitrate", -1));
+	ASSERT_STR_EQ("aac", rss_config_get_str(final, "audio", "codec", ""));
+	ASSERT_EQ(80, rss_config_get_int(final, "audio", "volume", -1));
+
+	/* Defaults must NOT have leaked to disk */
+	/* Reload fresh (no default population) and check raw */
+	rss_config_free(final);
+	final = rss_config_load(path);
+	ASSERT(final);
+	const char *gop = rss_config_get_str(final, "stream0", "gop", NULL);
+	ASSERTm("default 'gop' leaked to disk", gop == NULL);
+	const char *sr = rss_config_get_str(final, "audio", "sample_rate", NULL);
+	ASSERTm("default 'sample_rate' leaked to disk", sr == NULL);
+	const char *nk = rss_config_get_str(final, "newdaemon", "newkey", NULL);
+	ASSERTm("default 'newkey' leaked to disk", nk == NULL);
+	rss_config_free(final);
+
+	unlink(path);
+	cleanup();
+	PASS();
+}
+
 SUITE(config_suite)
 {
 	RUN_TEST(config_load_basic);
@@ -357,6 +692,10 @@ SUITE(config_suite)
 	RUN_TEST(config_save_roundtrip);
 	RUN_TEST(config_save_dirty_merge);
 	RUN_TEST(config_save_defaults_not_dirty);
+	RUN_TEST(config_save_stress_multi_daemon);
+	RUN_TEST(config_save_rapid_overwrite);
+	RUN_TEST(config_save_new_section_survives);
+	RUN_TEST(config_save_no_dirty_noop);
 	RUN_TEST(config_foreach);
 	RUN_TEST(config_empty_file);
 	RUN_TEST(config_long_value);
