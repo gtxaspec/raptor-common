@@ -25,6 +25,7 @@
 typedef struct rss_config_entry {
     char key[MAX_KEY];
     char value[MAX_VAL];
+    bool dirty; /* modified at runtime via set_str/set_int */
     struct rss_config_entry *next;
 } rss_config_entry_t;
 
@@ -60,7 +61,8 @@ static rss_config_section_t *find_or_create_section(rss_config_t *cfg, const cha
     return s;
 }
 
-static void add_entry(rss_config_section_t *sec, const char *key, const char *value)
+static void add_entry_ex(rss_config_section_t *sec, const char *key, const char *value,
+                         bool dirty)
 {
     /* Overwrite if key already exists */
     rss_config_entry_t *e;
@@ -68,6 +70,7 @@ static void add_entry(rss_config_section_t *sec, const char *key, const char *va
         if (strcasecmp(e->key, key) == 0) {
             if (rss_strlcpy(e->value, value, sizeof(e->value)) >= sizeof(e->value))
                 RSS_WARN("config: value truncated for key '%s' (max %d)", key, MAX_VAL - 1);
+            e->dirty = e->dirty || dirty;
             return;
         }
     }
@@ -78,8 +81,14 @@ static void add_entry(rss_config_section_t *sec, const char *key, const char *va
     rss_strlcpy(e->key, key, sizeof(e->key));
     if (rss_strlcpy(e->value, value, sizeof(e->value)) >= sizeof(e->value))
         RSS_WARN("config: value truncated for key '%s' (max %d)", key, MAX_VAL - 1);
+    e->dirty = dirty;
     e->next = sec->entries;
     sec->entries = e;
+}
+
+static void add_entry(rss_config_section_t *sec, const char *key, const char *value)
+{
+    add_entry_ex(sec, key, value, false);
 }
 
 /* Strip inline comment: look for ' #' or '\t#' that is not inside quotes.
@@ -201,14 +210,12 @@ const char *rss_config_get_str(rss_config_t *cfg, const char *section, const cha
     }
 
     /* Populate default into config so config-get-section shows all resolved values.
-     * Only when default_val is non-NULL (callers with NULL default don't want storage). */
+     * Only when default_val is non-NULL (callers with NULL default don't want storage).
+     * Uses add_entry (not set_str) so defaults are NOT marked dirty. */
     if (default_val) {
-        rss_config_set_str(cfg, section, key, default_val);
-        /* Find the stored entry to return a stable pointer */
-        rss_config_section_t *ds;
-        for (ds = cfg->sections; ds; ds = ds->next) {
-            if (strcasecmp(ds->name, sec_name) != 0)
-                continue;
+        rss_config_section_t *ds = find_or_create_section(cfg, sec_name);
+        if (ds) {
+            add_entry(ds, key, default_val);
             rss_config_entry_t *de;
             for (de = ds->entries; de; de = de->next) {
                 if (strcasecmp(de->key, key) == 0)
@@ -223,11 +230,13 @@ int rss_config_get_int(rss_config_t *cfg, const char *section, const char *key, 
 {
     const char *val = rss_config_get_str(cfg, section, key, NULL);
     if (!val) {
-        /* Store default so config-get-section shows it */
+        /* Store default so config-get-section shows it (not dirty) */
         if (cfg) {
             char buf[32];
             snprintf(buf, sizeof(buf), "%d", default_val);
-            rss_config_set_str(cfg, section, key, buf);
+            rss_config_section_t *sec = find_or_create_section(cfg, section ? section : "");
+            if (sec)
+                add_entry(sec, key, buf);
         }
         return default_val;
     }
@@ -243,9 +252,12 @@ bool rss_config_get_bool(rss_config_t *cfg, const char *section, const char *key
 {
     const char *val = rss_config_get_str(cfg, section, key, NULL);
     if (!val) {
-        /* Store default so config-get-section shows it */
-        if (cfg)
-            rss_config_set_str(cfg, section, key, default_val ? "true" : "false");
+        /* Store default so config-get-section shows it (not dirty) */
+        if (cfg) {
+            rss_config_section_t *sec = find_or_create_section(cfg, section ? section : "");
+            if (sec)
+                add_entry(sec, key, default_val ? "true" : "false");
+        }
         return default_val;
     }
 
@@ -293,7 +305,7 @@ void rss_config_set_str(rss_config_t *cfg, const char *section, const char *key,
         return;
     rss_config_section_t *sec = find_or_create_section(cfg, section ? section : "");
     if (sec)
-        add_entry(sec, key, value);
+        add_entry_ex(sec, key, value, true);
 }
 
 void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key, int value)
@@ -404,22 +416,25 @@ int rss_config_save(rss_config_t *cfg, const char *path)
     if (!cfg || !path)
         return -1;
 
-    /* Merge with existing file so multiple daemons sharing one config
-     * don't clobber each other's sections. */
+    /* Only merge entries modified at runtime (dirty) into the existing
+     * file.  Each daemon shares /etc/raptor.conf but owns different
+     * sections — writing the entire in-memory config would clobber
+     * changes made by other daemons. */
     rss_config_t *disk = rss_config_load(path);
     if (disk) {
-        /* Apply all in-memory sections/keys on top of the disk copy */
         rss_config_section_t *s;
         for (s = cfg->sections; s; s = s->next) {
             rss_config_entry_t *e;
-            for (e = s->entries; e; e = e->next)
-                rss_config_set_str(disk, s->name, e->key, e->value);
+            for (e = s->entries; e; e = e->next) {
+                if (e->dirty)
+                    rss_config_set_str(disk, s->name, e->key, e->value);
+            }
         }
         int ret = config_write(disk, path);
         rss_config_free(disk);
         return ret;
     }
 
-    /* No existing file — write directly */
+    /* No existing file — write everything */
     return config_write(cfg, path);
 }

@@ -259,6 +259,90 @@ TEST config_duplicate_key(void)
 	PASS();
 }
 
+/* Simulate two daemons saving to the same file — only dirty keys merge */
+TEST config_save_dirty_merge(void)
+{
+	const char *path = "/tmp/rss_test_config_merge.ini";
+
+	/* Write initial shared config */
+	rss_config_t *init = load_ini("[audio]\ncodec = aac\nvolume = 80\n[stream0]\nfps = 25\n");
+	ASSERT(init);
+	rss_config_set_str(init, "audio", "codec", "aac"); /* mark all dirty for initial write */
+	rss_config_set_str(init, "audio", "volume", "80");
+	rss_config_set_str(init, "stream0", "fps", "25");
+	ASSERT_EQ(0, rss_config_save(init, path));
+	rss_config_free(init);
+
+	/* Daemon A (RVD) loads config, changes stream0/fps */
+	rss_config_t *daemon_a = rss_config_load(path);
+	ASSERT(daemon_a);
+	rss_config_set_int(daemon_a, "stream0", "fps", 15);
+	/* daemon_a also has [audio] from file load — but NOT dirty */
+
+	/* Daemon B (RAD) loads config, changes audio/volume */
+	rss_config_t *daemon_b = rss_config_load(path);
+	ASSERT(daemon_b);
+	rss_config_set_int(daemon_b, "audio", "volume", 50);
+	/* daemon_b also has [stream0] from file load — but NOT dirty */
+
+	/* Both save sequentially (like raptorctl config save) */
+	ASSERT_EQ(0, rss_config_save(daemon_a, path));
+	ASSERT_EQ(0, rss_config_save(daemon_b, path));
+	rss_config_free(daemon_a);
+	rss_config_free(daemon_b);
+
+	/* Verify: both changes survived, neither clobbered the other */
+	rss_config_t *result = rss_config_load(path);
+	ASSERT(result);
+	ASSERT_STR_EQ("aac", rss_config_get_str(result, "audio", "codec", ""));
+	ASSERT_EQ(50, rss_config_get_int(result, "audio", "volume", 0));
+	ASSERT_EQ(15, rss_config_get_int(result, "stream0", "fps", 0));
+	rss_config_free(result);
+	unlink(path);
+	cleanup();
+	PASS();
+}
+
+/* Defaults populated by get_* must NOT be dirty */
+TEST config_save_defaults_not_dirty(void)
+{
+	const char *path = "/tmp/rss_test_config_defaults.ini";
+
+	/* Write minimal config */
+	rss_config_t *init = load_ini("[audio]\ncodec = opus\n");
+	ASSERT(init);
+	rss_config_set_str(init, "audio", "codec", "opus");
+	ASSERT_EQ(0, rss_config_save(init, path));
+	rss_config_free(init);
+
+	/* Daemon loads config, reads a key with default (populates it) */
+	rss_config_t *daemon = rss_config_load(path);
+	ASSERT(daemon);
+	int vol = rss_config_get_int(daemon, "audio", "volume", 80);
+	ASSERT_EQ(80, vol);
+	/* volume=80 is now in memory but NOT dirty */
+
+	/* Another process writes volume=50 to the file */
+	rss_config_t *other = rss_config_load(path);
+	ASSERT(other);
+	rss_config_set_int(other, "audio", "volume", 50);
+	ASSERT_EQ(0, rss_config_save(other, path));
+	rss_config_free(other);
+
+	/* Original daemon saves — should NOT overwrite volume=50 with default 80 */
+	ASSERT_EQ(0, rss_config_save(daemon, path));
+	rss_config_free(daemon);
+
+	rss_config_t *result = rss_config_load(path);
+	ASSERT(result);
+	ASSERT_EQ(50, rss_config_get_int(result, "audio", "volume", 0));
+	ASSERT_STR_EQ("opus", rss_config_get_str(result, "audio", "codec", ""));
+	rss_config_free(result);
+	unlink(path);
+	cleanup();
+	PASS();
+}
+
 SUITE(config_suite)
 {
 	RUN_TEST(config_load_basic);
@@ -271,6 +355,8 @@ SUITE(config_suite)
 	RUN_TEST(config_set_str);
 	RUN_TEST(config_set_int);
 	RUN_TEST(config_save_roundtrip);
+	RUN_TEST(config_save_dirty_merge);
+	RUN_TEST(config_save_defaults_not_dirty);
 	RUN_TEST(config_foreach);
 	RUN_TEST(config_empty_file);
 	RUN_TEST(config_long_value);
