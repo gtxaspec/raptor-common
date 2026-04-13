@@ -303,11 +303,9 @@ void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key,
     rss_config_set_str(cfg, section, key, buf);
 }
 
-int rss_config_save(rss_config_t *cfg, const char *path)
+/* Write a config to a file (no merging) */
+static int config_write(rss_config_t *cfg, const char *path)
 {
-    if (!cfg || !path)
-        return -1;
-
     /* Count sections to reverse linked-list order (restore file order) */
     int nsec = 0;
     rss_config_section_t *s;
@@ -399,4 +397,29 @@ out:
     free(secs);
     free(buf);
     return ret;
+}
+
+int rss_config_save(rss_config_t *cfg, const char *path)
+{
+    if (!cfg || !path)
+        return -1;
+
+    /* Merge with existing file so multiple daemons sharing one config
+     * don't clobber each other's sections. */
+    rss_config_t *disk = rss_config_load(path);
+    if (disk) {
+        /* Apply all in-memory sections/keys on top of the disk copy */
+        rss_config_section_t *s;
+        for (s = cfg->sections; s; s = s->next) {
+            rss_config_entry_t *e;
+            for (e = s->entries; e; e = e->next)
+                rss_config_set_str(disk, s->name, e->key, e->value);
+        }
+        int ret = config_write(disk, path);
+        rss_config_free(disk);
+        return ret;
+    }
+
+    /* No existing file — write directly */
+    return config_write(cfg, path);
 }
