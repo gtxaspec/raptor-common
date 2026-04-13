@@ -200,8 +200,12 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     bool show_help = false;
     int opt;
 
+    /* Banner — always first output, before any other action */
+    fprintf(stderr, "Raptor Streaming System — %s [%s] built %s\n",
+            name, rss_build_hash, rss_build_time);
+
     optind = 1; /* reset getopt */
-    while ((opt = getopt(argc, argv, "c:fdh")) != -1) {
+    while ((opt = getopt(argc, argv, "c:fdhv")) != -1) {
         switch (opt) {
         case 'c':
             config_path = optarg;
@@ -212,24 +216,26 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
         case 'd':
             debug = true;
             break;
+        case 'v':
+            return 1; /* banner already printed */
         case 'h':
             show_help = true;
             break;
         default:
+            fprintf(stderr,
+                    "Usage: %s [-c config] [-f] [-d] [-v] [-h]\n",
+                    name);
             return -1;
         }
     }
 
-    /* Banner — always first output, before any other action */
-    fprintf(stderr, "Raptor Streaming System — %s [%s] built %s\n",
-            name, rss_build_hash, rss_build_time);
-
     if (show_help) {
         fprintf(stderr,
-                "Usage: %s [-c config] [-f] [-d] [-h]\n"
+                "Usage: %s [-c config] [-f] [-d] [-v] [-h]\n"
                 "  -c <file>   Config file (default: /etc/raptor.conf)\n"
                 "  -f          Run in foreground\n"
                 "  -d          Debug logging\n"
+                "  -v          Show version\n"
                 "  -h          Show this help\n",
                 name);
         return 1; /* clean exit */
