@@ -186,13 +186,20 @@ volatile sig_atomic_t *rss_signal_init(void)
 /* Daemon init helper                                                  */
 /* ------------------------------------------------------------------ */
 
-int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv)
+int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv,
+                    const char *features)
 {
     if (!ctx || !name)
         return -1;
 
     memset(ctx, 0, sizeof(*ctx));
     ctx->name = name;
+
+    /* Skip leading space from preprocessor concatenation */
+    if (features && *features == ' ')
+        features++;
+    if (features && !*features)
+        features = NULL;
 
     const char *config_path = "/etc/raptor.conf";
     bool foreground = false;
@@ -201,8 +208,12 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     int opt;
 
     /* Banner — always first output, before any other action */
-    fprintf(stderr, "Raptor Streaming System — %s [%s] built %s\n",
-            name, rss_build_hash, rss_build_time);
+    if (features)
+        fprintf(stderr, "Raptor Streaming System — %s [%s] built %s (%s)\n",
+                name, rss_build_hash, rss_build_time, features);
+    else
+        fprintf(stderr, "Raptor Streaming System — %s [%s] built %s\n",
+                name, rss_build_hash, rss_build_time);
 
     optind = 1; /* reset getopt */
     while ((opt = getopt(argc, argv, "c:fdhv")) != -1) {
@@ -298,7 +309,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
 
     ctx->running = rss_signal_init();
     if (!foreground)
-        RSS_BANNER(name);
+        RSS_BANNER(name, features);
     RSS_INFO("%s starting", name);
     return 0;
 }

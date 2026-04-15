@@ -204,14 +204,22 @@ typedef struct {
  * daemonizes, installs signal handlers.
  * Returns 0 on success, 1 if daemon should exit cleanly (e.g. -h),
  * -1 on fatal error. On success, ctx is populated. */
-int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv);
+int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **argv,
+                    const char *features);
 
 /* Build banner — uses extern symbols from rss_build_info.o (generated
  * by the raptor Makefile) so the hash isn't baked into librss_common.a. */
 extern const char *rss_build_hash;
 extern const char *rss_build_time;
-#define RSS_BANNER(name)                                                                           \
-    RSS_INFO("Raptor Streaming System — %s [%s] built %s", (name), rss_build_hash, rss_build_time)
+#define RSS_BANNER(name, features)                                                                 \
+    do {                                                                                           \
+        if ((features) && *(features))                                                             \
+            RSS_INFO("Raptor Streaming System — %s [%s] built %s (%s)", (name), rss_build_hash,   \
+                     rss_build_time, (features));                                                   \
+        else                                                                                       \
+            RSS_INFO("Raptor Streaming System — %s [%s] built %s", (name), rss_build_hash,        \
+                     rss_build_time);                                                               \
+    } while (0)
 
 /* ================================================================
  * Control Socket Common Handlers
