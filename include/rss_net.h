@@ -23,17 +23,18 @@ extern "C" {
 /* Format sockaddr_storage to string. IPv4-mapped IPv6 shown as plain IPv4. */
 static inline const char *rss_addr_str(const struct sockaddr_storage *ss, char *buf, size_t bufsz)
 {
+    const char *r = NULL;
     if (ss->ss_family == AF_INET) {
-        inet_ntop(AF_INET, &((const struct sockaddr_in *)ss)->sin_addr, buf, bufsz);
+        r = inet_ntop(AF_INET, &((const struct sockaddr_in *)ss)->sin_addr, buf, bufsz);
     } else if (ss->ss_family == AF_INET6) {
         const struct sockaddr_in6 *s6 = (const struct sockaddr_in6 *)ss;
         if (IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr))
-            inet_ntop(AF_INET, &s6->sin6_addr.s6_addr[12], buf, bufsz);
+            r = inet_ntop(AF_INET, &s6->sin6_addr.s6_addr[12], buf, bufsz);
         else
-            inet_ntop(AF_INET6, &s6->sin6_addr, buf, bufsz);
-    } else {
-        snprintf(buf, bufsz, "???");
+            r = inet_ntop(AF_INET6, &s6->sin6_addr, buf, bufsz);
     }
+    if (!r)
+        snprintf(buf, bufsz, "???");
     return buf;
 }
 
@@ -68,9 +69,9 @@ static inline int rss_listen_tcp(int port, int backlog)
         return -1;
 
     int one = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     int zero = 0;
-    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof(zero));
+    (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof(zero));
 
     struct sockaddr_in6 addr = {
         .sin6_family = AF_INET6,
@@ -93,7 +94,7 @@ static inline int rss_listen_tcp(int port, int backlog)
 static inline void rss_set_tcp_nodelay(int fd)
 {
     int one = 1;
-    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 }
 
 #ifdef __cplusplus
