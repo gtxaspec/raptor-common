@@ -34,14 +34,15 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
     const char *cmd = cmd_obj->valuestring;
 
     if (strcmp(cmd, "config-get-section") == 0) {
+        int len = 0;
         cJSON *sec_obj = cJSON_GetObjectItemCaseSensitive(root, "section");
         if (cJSON_IsString(sec_obj) && sec_obj->valuestring) {
             const char *section = sec_obj->valuestring;
             cJSON *resp = cJSON_CreateObject();
             if (!resp) {
-                rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
+                len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
                 cJSON_Delete(root);
-                return (int)strlen(resp_buf);
+                return len;
             }
             cJSON_AddStringToObject(resp, "status", "ok");
             cJSON_AddStringToObject(resp, "section", section);
@@ -50,18 +51,21 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
                 rss_config_foreach(cfg, section, section_dump_cb, keys_obj);
             char *s = cJSON_PrintUnformatted(resp);
             if (s) {
-                if (rss_strlcpy(resp_buf, s, (size_t)resp_buf_size) >= (size_t)resp_buf_size)
-                    rss_ctrl_resp_error(resp_buf, resp_buf_size, "response truncated");
+                size_t sl = rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
+                if (sl >= (size_t)resp_buf_size)
+                    len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "response truncated");
+                else
+                    len = (int)sl;
                 free(s);
             } else {
-                rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
+                len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
             }
             cJSON_Delete(resp);
         } else {
-            rss_ctrl_resp_error(resp_buf, resp_buf_size, "need section");
+            len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "need section");
         }
         cJSON_Delete(root);
-        return (int)strlen(resp_buf);
+        return len;
     }
 
     if (strcmp(cmd, "config-get") == 0) {
