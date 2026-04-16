@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <syslog.h>
 
@@ -17,10 +18,18 @@
 /* State                                                               */
 /* ------------------------------------------------------------------ */
 
+/*
+ * NOTE: rss_log / rss_vlog are NOT async-signal-safe (they use fprintf,
+ * flockfile, vfprintf).  Signal handlers must never call RSS_INFO() etc.
+ * The raptor signal handler (rss_signal_init) only sets a sig_atomic_t
+ * flag, which is correct.
+ */
+
 static char s_daemon_name[64];
-static rss_log_level_t s_level = RSS_LOG_INFO;
+static _Atomic int s_level = RSS_LOG_INFO;
 static rss_log_target_t s_target = RSS_LOG_TARGET_STDERR;
 static FILE *s_fp = NULL; /* file target */
+
 
 static const char *level_names[] = {
     "FATAL", "ERROR", "WARN ", "INFO ", "DEBUG", "TRACE",
@@ -62,17 +71,17 @@ void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target
 
 void rss_log_set_level(rss_log_level_t level)
 {
-    s_level = level;
+    atomic_store_explicit(&s_level, level, memory_order_relaxed);
 }
 
 rss_log_level_t rss_log_get_level(void)
 {
-    return s_level;
+    return atomic_load_explicit(&s_level, memory_order_relaxed);
 }
 
 void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt, va_list ap)
 {
-    if (level > s_level)
+    if (level > atomic_load_explicit(&s_level, memory_order_relaxed))
         return;
 
     if (s_target == RSS_LOG_TARGET_SYSLOG) {
@@ -82,7 +91,10 @@ void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt
         return;
     }
 
-    /* Build timestamp HH:MM:SS.mmm from wall clock */
+    /* Wall-clock timestamp for human-readable log correlation.
+     * CLOCK_REALTIME can jump on NTP step — acceptable for logs;
+     * CLOCK_MONOTONIC would give uptime-relative times that are
+     * harder to correlate with external events. */
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     struct tm tm;
