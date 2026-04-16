@@ -6,6 +6,7 @@
 #include "rss_common.h"
 
 #include <string.h>
+#include <strings.h> /* strncasecmp */
 #include <stdint.h>
 
 /* Base64 decode table — built once by rss_base64_init() */
@@ -46,15 +47,21 @@ int rss_base64_decode(const char *in, size_t in_len, char *out, size_t out_max)
 
 bool rss_http_check_basic_auth(const char *request, const char *user, const char *pass)
 {
+    /* SECURITY: empty username = auth disabled. Intentional for embedded
+     * deployments that don't configure credentials. Callers should warn
+     * at startup if http_user is empty and the endpoint is network-exposed. */
     if (!user[0])
         return true;
 
+    /* Case-insensitive header name match per RFC 7230 */
     const char *needle = "Authorization: Basic ";
+    size_t needle_len = 21; /* strlen(needle) */
     const char *auth = NULL;
     const char *p = request;
-    while ((p = strstr(p, needle)) != NULL) {
-        if (p == request || *(p - 1) == '\n') {
-            auth = p + strlen(needle);
+    while (*p) {
+        if ((p == request || *(p - 1) == '\n') &&
+            strncasecmp(p, needle, needle_len) == 0) {
+            auth = p + needle_len;
             break;
         }
         p++;
@@ -66,6 +73,7 @@ bool rss_http_check_basic_auth(const char *request, const char *user, const char
     while (*end && *end != '\r' && *end != '\n' && *end != ' ')
         end++;
 
+    /* Credentials longer than ~190 chars (pre-base64) will be truncated */
     char decoded[256];
     int dlen = rss_base64_decode(auth, (size_t)(end - auth), decoded, sizeof(decoded) - 1);
     if (dlen <= 0)
@@ -77,5 +85,10 @@ bool rss_http_check_basic_auth(const char *request, const char *user, const char
         return false;
     *colon = '\0';
 
-    return rss_secure_compare(decoded, user) && rss_secure_compare(colon + 1, pass);
+    /* Evaluate both comparisons to prevent timing side-channel that
+     * leaks whether the username is valid (short-circuit && would skip
+     * the password comparison on username mismatch). */
+    bool user_ok = rss_secure_compare(decoded, user);
+    bool pass_ok = rss_secure_compare(colon + 1, pass);
+    return user_ok & pass_ok;
 }
