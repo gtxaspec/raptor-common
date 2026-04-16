@@ -149,6 +149,11 @@ rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms)
     conn->fd = fd;
     mbedtls_ssl_init(&conn->ssl);
 
+    /* Set read timeout on shared config before setup. Modifies the shared
+     * config — safe because accept is single-threaded in all callers. */
+    if (timeout_ms > 0)
+        mbedtls_ssl_conf_read_timeout(&ctx->conf, timeout_ms);
+
     int ret = mbedtls_ssl_setup(&conn->ssl, &ctx->conf);
     if (ret != 0) {
         free(conn);
@@ -157,10 +162,8 @@ rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms)
 
     mbedtls_ssl_set_bio(&conn->ssl, &conn->fd, bio_send, bio_recv, bio_recv_timeout);
 
-    if (timeout_ms > 0)
-        mbedtls_ssl_conf_read_timeout((mbedtls_ssl_config *)conn->ssl.private_conf, timeout_ms);
-
-    /* Perform handshake */
+    /* Handshake loop — not a busy-wait because bio_recv_timeout uses poll()
+     * and bio_send blocks on the blocking socket used by all callers. */
     while ((ret = mbedtls_ssl_handshake(&conn->ssl)) != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
             mbedtls_ssl_free(&conn->ssl);
@@ -200,6 +203,9 @@ ssize_t rss_tls_write(rss_tls_conn_t *conn, const void *buf, size_t len)
         int ret = mbedtls_ssl_write(&conn->ssl, p + written, len - written);
         if (ret < 0) {
             if (ret == MBEDTLS_ERR_SSL_WANT_WRITE || ret == MBEDTLS_ERR_SSL_WANT_READ) {
+                /* Retry with same args (written not advanced) — satisfies
+                 * mbedTLS requirement to retry WANT_* with identical pointer
+                 * and length so buffered partial records can be flushed. */
                 struct pollfd pfd = {
                     .fd = conn->fd,
                     .events = (ret == MBEDTLS_ERR_SSL_WANT_READ) ? POLLIN : POLLOUT,
