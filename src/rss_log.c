@@ -81,7 +81,7 @@ rss_log_level_t rss_log_get_level(void)
 
 void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt, va_list ap)
 {
-    if (level > atomic_load_explicit(&s_level, memory_order_relaxed))
+    if ((int)level > atomic_load_explicit(&s_level, memory_order_relaxed))
         return;
 
     if (s_target == RSS_LOG_TARGET_SYSLOG) {
