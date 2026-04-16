@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <errno.h>
 
@@ -40,46 +41,37 @@ static void make_pid_path(char *buf, int buf_size, const char *name)
     snprintf(buf, (size_t)buf_size, "%s/%s.pid", PID_DIR, name);
 }
 
-static int write_pid_file(const char *name)
-{
-    char path[PID_PATH_MAX];
-    make_pid_path(path, (int)sizeof(path), name);
-
-    rss_mkdir_p(PID_DIR);
-
-    /* Use raw I/O — stdio fopen/fprintf internally malloc buffers
-     * which can interfere with subsequent mmap on MIPS uclibc */
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0)
-        return -1;
-    char buf[16];
-    int len = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
-    if (write(fd, buf, (size_t)len) != len) {
-        close(fd);
-        return -1;
-    }
-    close(fd);
-    return 0;
-}
-
 /* ------------------------------------------------------------------ */
 /* Daemonization                                                       */
 /* ------------------------------------------------------------------ */
 
 int rss_daemonize(const char *name, bool already_daemon)
 {
-    /* Reject if another instance is already running */
-    int existing = rss_daemon_check(name);
-    if (existing > 0) {
-        fprintf(stderr, "%s: already running (pid %d)\n", name, existing);
+    char path[PID_PATH_MAX];
+    make_pid_path(path, (int)sizeof(path), name);
+    rss_mkdir_p(PID_DIR);
+
+    /* Open pidfile and acquire exclusive lock BEFORE forking.
+     * This eliminates the TOCTOU race between check and fork —
+     * flock is atomic and the lock is inherited through fork. */
+    int pid_fd = open(path, O_WRONLY | O_CREAT, 0600);
+    if (pid_fd < 0)
+        return -1;
+
+    if (flock(pid_fd, LOCK_EX | LOCK_NB) < 0) {
+        close(pid_fd);
+        int existing = rss_daemon_check(name);
+        fprintf(stderr, "%s: already running (pid %d)\n", name, existing > 0 ? existing : 0);
         return -1;
     }
 
     if (!already_daemon) {
         /* First fork — detach from parent */
         pid_t pid = fork();
-        if (pid < 0)
+        if (pid < 0) {
+            close(pid_fd);
             return -1;
+        }
         if (pid > 0) {
             fprintf(stderr, "%s launched\n", name);
             _exit(0);
@@ -106,11 +98,24 @@ int rss_daemonize(const char *name, bool already_daemon)
                 close(fd);
         }
 
-        chdir("/");
+        (void)chdir("/");
         umask(0);
     }
 
-    return write_pid_file(name);
+    /* Write final daemon PID (after double-fork this is the grandchild).
+     * Use raw I/O — stdio fopen/fprintf internally malloc buffers
+     * which can interfere with subsequent mmap on MIPS uclibc. */
+    ftruncate(pid_fd, 0);
+    lseek(pid_fd, 0, SEEK_SET);
+    char buf[16];
+    int len = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
+    if (write(pid_fd, buf, (size_t)len) != len) {
+        close(pid_fd);
+        return -1;
+    }
+
+    /* Intentionally keep pid_fd open — flock held until process exit */
+    return 0;
 }
 
 void rss_daemon_cleanup(const char *name)
@@ -165,7 +170,8 @@ volatile sig_atomic_t *rss_signal_init(void)
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
 
-    /* SIGHUP → ignore (config reload via control socket, not signals) */
+    /* SIGHUP → intentionally ignored. Config changes are applied via
+     * the control socket (raptorctl), not signal-based reload. */
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = SIG_IGN;
     sigemptyset(&sa.sa_mask);
