@@ -209,16 +209,17 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
 
 /* Build banner — uses extern symbols from rss_build_info.o (generated
  * by the raptor Makefile) so the hash isn't baked into librss_common.a. */
-extern const char *rss_build_hash;
-extern const char *rss_build_time;
+extern const char *rss_build_hash __attribute__((weak));
+extern const char *rss_build_time __attribute__((weak));
 #define RSS_BANNER(name, features)                                                                 \
     do {                                                                                           \
+        const char *_hash = rss_build_hash ? rss_build_hash : "unknown";                           \
+        const char *_time = rss_build_time ? rss_build_time : "unknown";                           \
         if ((features) && *(features))                                                             \
-            RSS_INFO("Raptor Streaming System — %s [%s] built %s (%s)", (name), rss_build_hash,   \
-                     rss_build_time, (features));                                                   \
+            RSS_INFO("Raptor Streaming System — %s [%s] built %s (%s)", (name), _hash,            \
+                     _time, (features));                                                            \
         else                                                                                       \
-            RSS_INFO("Raptor Streaming System — %s [%s] built %s", (name), rss_build_hash,        \
-                     rss_build_time);                                                               \
+            RSS_INFO("Raptor Streaming System — %s [%s] built %s", (name), _hash, _time);         \
     } while (0)
 
 /* ================================================================
@@ -237,6 +238,7 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
 __attribute__((format(printf, 3, 4)))
 static inline int rss_ctrl_resp(char *buf, int size, const char *fmt, ...)
 {
+    if (size <= 0) return 0;
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, (size_t)size, fmt, ap);
