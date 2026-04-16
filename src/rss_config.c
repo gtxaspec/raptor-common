@@ -12,6 +12,9 @@
 #include <string.h>
 #include <strings.h> /* strcasecmp */
 #include <ctype.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/file.h>
 
 /* ------------------------------------------------------------------ */
 /* Internal data structures                                            */
@@ -76,8 +79,10 @@ static void add_entry_ex(rss_config_section_t *sec, const char *key, const char 
     }
 
     e = calloc(1, sizeof(*e));
-    if (!e)
+    if (!e) {
+        RSS_WARN("config: alloc failed for key '%s'", key);
         return;
+    }
     rss_strlcpy(e->key, key, sizeof(e->key));
     if (rss_strlcpy(e->value, value, sizeof(e->value)) >= sizeof(e->value))
         RSS_WARN("config: value truncated for key '%s' (max %d)", key, MAX_VAL - 1);
@@ -91,8 +96,9 @@ static void add_entry(rss_config_section_t *sec, const char *key, const char *va
     add_entry_ex(sec, key, value, false);
 }
 
-/* Strip inline comment: look for ' #' or '\t#' that is not inside quotes.
- * Simple heuristic: first occurrence of ' #' outside leading content. */
+/* Strip inline comment: look for ' #' or '\t#'.
+ * Does NOT handle quoted values — "foo # bar" will be truncated at #.
+ * Config files currently use no quoted values. */
 static void strip_inline_comment(char *s)
 {
     char *p = s;
@@ -147,8 +153,10 @@ rss_config_t *rss_config_load(const char *path)
 
         /* Key = value */
         char *eq = strchr(s, '=');
-        if (!eq)
+        if (!eq) {
+            RSS_WARN("config: malformed line (no '='): %s", s);
             continue;
+        }
 
         *eq = '\0';
         char *key = rss_trim(s);
@@ -209,7 +217,10 @@ const char *rss_config_get_str(rss_config_t *cfg, const char *section, const cha
         }
     }
 
-    /* Populate default into config so config-get-section shows all resolved values.
+    /* Auto-populate default so config-get-section shows all resolved values.
+     * This mutates the config on read — acceptable because all daemon access
+     * is single-threaded (init + ctrl handler both on main thread via epoll).
+     * Not safe for concurrent readers on the same config object.
      * Only when default_val is non-NULL (callers with NULL default don't want storage).
      * Uses add_entry (not set_str) so defaults are NOT marked dirty. */
     if (default_val) {
@@ -416,10 +427,20 @@ int rss_config_save(rss_config_t *cfg, const char *path)
     if (!cfg || !path)
         return -1;
 
+    /* Serialize saves across daemons sharing the same config file.
+     * flock on a .lock sidecar prevents concurrent load-merge-write
+     * cycles from losing updates via the atomic rename. */
+    char lockpath[512];
+    snprintf(lockpath, sizeof(lockpath), "%s.lock", path);
+    int lock_fd = open(lockpath, O_WRONLY | O_CREAT, 0644);
+    if (lock_fd >= 0)
+        flock(lock_fd, LOCK_EX);
+
     /* Only merge entries modified at runtime (dirty) into the existing
      * file.  Each daemon shares /etc/raptor.conf but owns different
      * sections — writing the entire in-memory config would clobber
      * changes made by other daemons. */
+    int ret;
     rss_config_t *disk = rss_config_load(path);
     if (disk) {
         rss_config_section_t *s;
@@ -430,11 +451,16 @@ int rss_config_save(rss_config_t *cfg, const char *path)
                     rss_config_set_str(disk, s->name, e->key, e->value);
             }
         }
-        int ret = config_write(disk, path);
+        ret = config_write(disk, path);
         rss_config_free(disk);
-        return ret;
+    } else {
+        /* No existing file — write everything */
+        ret = config_write(cfg, path);
     }
 
-    /* No existing file — write everything */
-    return config_write(cfg, path);
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_UN);
+        close(lock_fd);
+    }
+    return ret;
 }
