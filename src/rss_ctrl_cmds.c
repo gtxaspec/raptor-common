@@ -50,7 +50,8 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
                 rss_config_foreach(cfg, section, section_dump_cb, keys_obj);
             char *s = cJSON_PrintUnformatted(resp);
             if (s) {
-                rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
+                if (rss_strlcpy(resp_buf, s, (size_t)resp_buf_size) >= (size_t)resp_buf_size)
+                    rss_ctrl_resp_error(resp_buf, resp_buf_size, "response truncated");
                 free(s);
             } else {
                 rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
