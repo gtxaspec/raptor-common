@@ -117,11 +117,24 @@ bool rss_secure_compare(const char *a, const char *b)
         return false;
     size_t alen = strlen(a);
     size_t blen = strlen(b);
-    /* Always compare alen bytes to avoid leaking length via early exit.
-     * XOR accumulator is non-zero on any mismatch. */
+
+    /* Copy into fixed-size zero-initialized buffers so the comparison
+     * loop is branchless — no conditional indexing that could compile
+     * to a data-dependent branch on architectures without CMOV. */
+    unsigned char buf_a[256] = {0};
+    unsigned char buf_b[256] = {0};
+    size_t ca = alen > sizeof(buf_a) ? sizeof(buf_a) : alen;
+    size_t cb = blen > sizeof(buf_b) ? sizeof(buf_b) : blen;
+    memcpy(buf_a, a, ca);
+    memcpy(buf_b, b, cb);
+
+    size_t maxlen = alen > blen ? alen : blen;
+    if (maxlen > sizeof(buf_a))
+        maxlen = sizeof(buf_a);
+
     volatile unsigned char diff = (unsigned char)(alen ^ blen);
-    for (size_t i = 0; i < alen; i++)
-        diff |= (unsigned char)a[i] ^ (unsigned char)(i < blen ? b[i] : 0);
+    for (size_t i = 0; i < maxlen; i++)
+        diff |= buf_a[i] ^ buf_b[i];
     return diff == 0;
 }
 
@@ -235,7 +248,14 @@ int rss_write_file_atomic(const char *path, const void *data, int size)
     memcpy(tmp_path, path, plen);
     memcpy(tmp_path + plen, ".tmp", 5); /* includes NUL */
 
-    int fd = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    /* Preserve existing file permissions (e.g., 0600 for configs with
+     * credentials). Fall back to 0644 for new files. */
+    struct stat orig_st;
+    mode_t mode = 0644;
+    if (stat(path, &orig_st) == 0)
+        mode = orig_st.st_mode & 07777;
+
+    int fd = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (fd < 0) {
         free(tmp_path);
         return -1;
