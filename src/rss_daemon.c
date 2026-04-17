@@ -98,14 +98,23 @@ int rss_daemonize(const char *name, bool already_daemon)
                 close(fd);
         }
 
-        (void)chdir("/");
+        /* Detach from the invoker's working directory. A failure here
+         * is non-fatal — we still function from whatever cwd we had —
+         * but worth logging because it suggests a broken filesystem. */
+        if (chdir("/") != 0)
+            RSS_WARN("rss_daemon_init: chdir(/) failed: %s", strerror(errno));
         umask(0);
     }
 
     /* Write final daemon PID (after double-fork this is the grandchild).
      * Use raw I/O — stdio fopen/fprintf internally malloc buffers
-     * which can interfere with subsequent mmap on MIPS uclibc. */
-    ftruncate(pid_fd, 0);
+     * which can interfere with subsequent mmap on MIPS uclibc.
+     *
+     * ftruncate failure here is rare but non-fatal: lseek+write below
+     * still overwrites the PID prefix. Log so we notice pathological
+     * cases (disk full, quota, filesystem gone read-only). */
+    if (ftruncate(pid_fd, 0) != 0)
+        RSS_WARN("rss_daemon_init: ftruncate(pid_fd) failed: %s", strerror(errno));
     lseek(pid_fd, 0, SEEK_SET);
     char buf[16];
     int len = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
