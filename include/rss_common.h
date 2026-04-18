@@ -17,6 +17,8 @@
 #include <string.h>
 #include <signal.h>
 
+#include "cJSON.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -254,6 +256,20 @@ static inline int rss_ctrl_resp_ok(char *buf, int size)
 static inline int rss_ctrl_resp_error(char *buf, int size, const char *reason)
 {
     return rss_ctrl_resp(buf, size, "{\"status\":\"error\",\"reason\":\"%s\"}", reason);
+}
+
+/* Serialize a cJSON object into the response buffer and free it.
+ * Takes ownership: json is always deleted, even on failure. */
+static inline int rss_ctrl_resp_json(char *buf, int size, cJSON *json)
+{
+    if (!json)
+        return rss_ctrl_resp_error(buf, size, "json alloc failed");
+    if (!cJSON_PrintPreallocated(json, buf, size, 0)) {
+        cJSON_Delete(json);
+        return rss_ctrl_resp_error(buf, size, "response too large");
+    }
+    cJSON_Delete(json);
+    return (int)strlen(buf);
 }
 
 /* ================================================================
