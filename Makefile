@@ -12,7 +12,7 @@ LIB_A   := librss_common.a
 all: $(LIB_SO) $(LIB_A)
 
 $(LIB_SO): $(OBJS)
-	$(CC) -shared -Wl,-soname,librss_common.so -Wl,-Bsymbolic -o $@ $^
+	$(CC) -shared -Wl,-soname,librss_common.so -Wl,-Bsymbolic -Wl,--gc-sections -o $@ $^
 
 $(LIB_A): $(OBJS)
 	$(AR) rcs $@ $^
