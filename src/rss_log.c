@@ -84,6 +84,10 @@ void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt
     if ((int)level > atomic_load_explicit(&s_level, memory_order_relaxed))
         return;
 
+    const char *basename = strrchr(file, '/');
+    if (basename)
+        file = basename + 1;
+
     if (s_target == RSS_LOG_TARGET_SYSLOG) {
         char msg[512];
         vsnprintf(msg, sizeof(msg), fmt, ap);
