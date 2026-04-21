@@ -64,8 +64,7 @@ static rss_config_section_t *find_or_create_section(rss_config_t *cfg, const cha
     return s;
 }
 
-static void add_entry_ex(rss_config_section_t *sec, const char *key, const char *value,
-                         bool dirty)
+static void add_entry_ex(rss_config_section_t *sec, const char *key, const char *value, bool dirty)
 {
     /* Overwrite if key already exists */
     rss_config_entry_t *e;
@@ -302,6 +301,26 @@ int rss_config_foreach(rss_config_t *cfg, const char *section,
             callback(e->key, e->value, userdata);
             count++;
         }
+    }
+    return count;
+}
+
+int rss_config_foreach_section(rss_config_t *cfg, const char *prefix,
+                               void (*callback)(const char *section, void *userdata),
+                               void *userdata)
+{
+    if (!cfg || !callback)
+        return 0;
+
+    int plen = prefix ? (int)strlen(prefix) : 0;
+    int count = 0;
+
+    rss_config_section_t *s;
+    for (s = cfg->sections; s; s = s->next) {
+        if (plen > 0 && strncasecmp(s->name, prefix, plen) != 0)
+            continue;
+        callback(s->name, userdata);
+        count++;
     }
     return count;
 }

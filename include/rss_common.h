@@ -101,6 +101,12 @@ int rss_config_foreach(rss_config_t *cfg, const char *section,
                        void (*callback)(const char *key, const char *value, void *userdata),
                        void *userdata);
 
+/* Iterate sections matching a prefix. Callback receives section name.
+ * Pass prefix="" or NULL to iterate all sections. */
+int rss_config_foreach_section(rss_config_t *cfg, const char *prefix,
+                               void (*callback)(const char *section, void *userdata),
+                               void *userdata);
+
 /* Set a string value in the running config. Creates section/key if needed. */
 void rss_config_set_str(rss_config_t *cfg, const char *section, const char *key, const char *value);
 
