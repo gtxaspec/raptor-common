@@ -272,7 +272,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     ctx->debug = debug;
 
     /* Initial logging to stderr/syslog so config load errors are visible */
-    rss_log_init(name, debug ? RSS_LOG_DEBUG : RSS_LOG_INFO,
+    rss_log_init(name, debug ? RSS_LOG_TRACE : RSS_LOG_INFO,
                  foreground ? RSS_LOG_TARGET_STDERR : RSS_LOG_TARGET_SYSLOG, NULL);
 
     ctx->cfg = rss_config_load(config_path);
@@ -302,7 +302,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
         else if (strcmp(cfg_level, "trace") == 0)
             level = RSS_LOG_TRACE;
         if (debug)
-            level = RSS_LOG_DEBUG; /* -d flag overrides */
+            level = RSS_LOG_TRACE; /* -d flag includes trace */
 
         rss_log_target_t target = RSS_LOG_TARGET_SYSLOG;
         if (foreground)
