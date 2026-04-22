@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-#define PID_DIR "/var/run/rss"
+#define PID_DIR RSS_RUN_DIR
 #define PID_PATH_MAX 128
 
 /* ------------------------------------------------------------------ */
