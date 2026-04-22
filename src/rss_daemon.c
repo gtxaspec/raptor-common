@@ -216,7 +216,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     if (features && !*features)
         features = NULL;
 
-    const char *config_path = "/etc/raptor.conf";
+    const char *config_path = RSS_CONFIG_PATH;
     bool foreground = false;
     bool debug = false;
     bool show_help = false;
@@ -258,7 +258,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     if (show_help) {
         fprintf(stderr,
                 "Usage: %s [-c config] [-f] [-d] [-v] [-h]\n"
-                "  -c <file>   Config file (default: /etc/raptor.conf)\n"
+                "  -c <file>   Config file (default: " RSS_CONFIG_PATH ")\n"
                 "  -f          Run in foreground\n"
                 "  -d          Debug logging\n"
                 "  -v          Show version\n"

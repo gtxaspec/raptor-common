@@ -27,8 +27,10 @@ extern "C" {
  * Paths
  * ================================================================ */
 
-#define RSS_RUN_DIR  "/var/run/rss"
-#define RSS_SOCK_FMT RSS_RUN_DIR "/%s.sock"
+#define RSS_RUN_DIR     "/var/run/rss"
+#define RSS_SOCK_FMT    RSS_RUN_DIR "/%s.sock"
+#define RSS_CONFIG_PATH "/etc/raptor.conf"
+#define RSS_SHM_DIR     "/dev/shm"
 
 /* ================================================================
  * Logging
