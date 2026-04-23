@@ -56,7 +56,7 @@ void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target
     s_level = level;
     s_target = target;
 
-    if (target == RSS_LOG_TARGET_SYSLOG) {
+    if (target == RSS_LOG_TARGET_SYSLOG || target == RSS_LOG_TARGET_BOTH) {
         openlog(s_daemon_name, LOG_PID | LOG_NDELAY, LOG_DAEMON);
     } else if (target == RSS_LOG_TARGET_FILE && log_file) {
         s_fp = fopen(log_file, "a");
@@ -88,11 +88,15 @@ void rss_vlog(rss_log_level_t level, const char *file, int line, const char *fmt
     if (basename)
         file = basename + 1;
 
-    if (s_target == RSS_LOG_TARGET_SYSLOG) {
+    if (s_target == RSS_LOG_TARGET_SYSLOG || s_target == RSS_LOG_TARGET_BOTH) {
         char msg[512];
-        vsnprintf(msg, sizeof(msg), fmt, ap);
+        va_list ap2;
+        va_copy(ap2, ap);
+        vsnprintf(msg, sizeof(msg), fmt, ap2);
+        va_end(ap2);
         syslog(syslog_prio[level], "[%s] %s:%d: %s", level_names[level], file, line, msg);
-        return;
+        if (s_target == RSS_LOG_TARGET_SYSLOG)
+            return;
     }
 
     /* Wall-clock timestamp for human-readable log correlation.

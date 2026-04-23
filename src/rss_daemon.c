@@ -282,9 +282,10 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     ctx->foreground = foreground;
     ctx->debug = debug;
 
-    /* Initial logging to stderr/syslog so config load errors are visible */
+    /* Log to both stderr and syslog before daemonize() — terminal is still
+     * attached, and errors like missing config should be visible everywhere. */
     rss_log_init(name, debug ? RSS_LOG_TRACE : RSS_LOG_INFO,
-                 foreground ? RSS_LOG_TARGET_STDERR : RSS_LOG_TARGET_SYSLOG, NULL);
+                 RSS_LOG_TARGET_BOTH, NULL);
 
     ctx->cfg = rss_config_load(config_path);
     if (!ctx->cfg) {

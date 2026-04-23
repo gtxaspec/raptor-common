@@ -49,6 +49,7 @@ typedef enum {
     RSS_LOG_TARGET_STDERR = 0,
     RSS_LOG_TARGET_SYSLOG = 1,
     RSS_LOG_TARGET_FILE = 2,
+    RSS_LOG_TARGET_BOTH = 3,
 } rss_log_target_t;
 
 /* Initialize logging. daemon_name is used as syslog ident and log prefix.
