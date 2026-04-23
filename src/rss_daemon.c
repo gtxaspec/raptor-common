@@ -15,6 +15,7 @@
 #include <getopt.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <syslog.h>
 #include <errno.h>
 
 #define PID_DIR RSS_RUN_DIR
@@ -223,12 +224,24 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     int opt;
 
     /* Banner — always first output, before any other action */
+    const char *plat = rss_build_platform ? rss_build_platform : "unknown";
+    char banner[256];
     if (features)
-        fprintf(stderr, "Raptor Streaming System — %s [%s] built %s (%s)\n",
-                name, rss_build_hash, rss_build_time, features);
+        snprintf(banner, sizeof(banner),
+                 "Raptor Streaming System — %s [%s] built for %s on %s (%s)", name, rss_build_hash,
+                 plat, rss_build_time, features);
     else
-        fprintf(stderr, "Raptor Streaming System — %s [%s] built %s\n",
-                name, rss_build_hash, rss_build_time);
+        snprintf(banner, sizeof(banner), "Raptor Streaming System — %s [%s] built for %s on %s",
+                 name, rss_build_hash, plat, rss_build_time);
+    fprintf(stderr, "%s\n", banner);
+    openlog(name, LOG_PID, LOG_DAEMON);
+    syslog(LOG_INFO, "%s", banner);
+    closelog();
+
+    /* Post-banner hook — HAL daemons use this for SoC verification */
+    __attribute__((weak)) extern void rss_post_banner_hook(const char *daemon_name);
+    if (rss_post_banner_hook)
+        rss_post_banner_hook(name);
 
     optind = 1; /* reset getopt */
     while ((opt = getopt(argc, argv, "c:fdhv")) != -1) {
@@ -248,9 +261,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
             show_help = true;
             break;
         default:
-            fprintf(stderr,
-                    "Usage: %s [-c config] [-f] [-d] [-v] [-h]\n",
-                    name);
+            fprintf(stderr, "Usage: %s [-c config] [-f] [-d] [-v] [-h]\n", name);
             return -1;
         }
     }
@@ -323,8 +334,6 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     }
 
     ctx->running = rss_signal_init();
-    if (!foreground)
-        RSS_BANNER(name, features);
     RSS_INFO("%s starting", name);
     return 0;
 }
