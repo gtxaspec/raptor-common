@@ -1,8 +1,9 @@
 /*
- * rss_tls.h -- Shared TLS server for HTTPS endpoints
+ * rss_tls.h -- Shared TLS for HTTPS endpoints and client connections
  *
  * Simple wrapper around mbedTLS for TCP stream TLS.
- * Used by RHD (HTTPS snapshots/MJPEG) and RWD (HTTPS WHIP signaling).
+ * Server: RHD (HTTPS snapshots/MJPEG), RWD (HTTPS WHIP signaling).
+ * Client: RSP (RTMPS push to YouTube/Twitch/etc).
  *
  * Requires mbedTLS in the sysroot. Guard usage with RSS_HAS_TLS.
  */
@@ -16,9 +17,12 @@
 typedef struct rss_tls_ctx rss_tls_ctx_t;
 typedef struct rss_tls_conn rss_tls_conn_t;
 
+/* Client-side TLS context (no cert/key needed). */
+typedef struct rss_tls_client_ctx rss_tls_client_ctx_t;
+
 /*
  * Initialize a TLS server context with the given certificate and key.
- * Returns 0 on success, -1 on error (logged internally).
+ * Returns context on success, NULL on error (logged internally).
  */
 rss_tls_ctx_t *rss_tls_init(const char *cert_path, const char *key_path);
 
@@ -33,6 +37,25 @@ void rss_tls_free(rss_tls_ctx_t *ctx);
  * Timeout in milliseconds for the handshake (0 = blocking).
  */
 rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms);
+
+/*
+ * Initialize a TLS client context for outgoing connections.
+ * No certificate needed — validates server cert against system CA bundle.
+ */
+rss_tls_client_ctx_t *rss_tls_client_init(void);
+
+/*
+ * Free the TLS client context.
+ */
+void rss_tls_client_free(rss_tls_client_ctx_t *ctx);
+
+/*
+ * Perform client-side TLS handshake on a connected TCP socket.
+ * hostname is used for SNI. Returns a TLS connection on success,
+ * NULL on failure (fd is NOT closed).
+ */
+rss_tls_conn_t *rss_tls_connect(rss_tls_client_ctx_t *ctx, int fd,
+                                const char *hostname, int timeout_ms);
 
 /*
  * Close and free a TLS connection. Does NOT close the underlying fd.

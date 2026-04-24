@@ -224,3 +224,110 @@ int rss_tls_get_fd(rss_tls_conn_t *conn)
 {
     return conn ? conn->fd : -1;
 }
+
+/* ── Client-side TLS ── */
+
+struct rss_tls_client_ctx {
+    mbedtls_ssl_config conf;
+    mbedtls_x509_crt cacert;
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+};
+
+rss_tls_client_ctx_t *rss_tls_client_init(void)
+{
+    rss_tls_client_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    if (!ctx)
+        return NULL;
+
+    int ret;
+
+    mbedtls_ssl_config_init(&ctx->conf);
+    mbedtls_x509_crt_init(&ctx->cacert);
+    mbedtls_entropy_init(&ctx->entropy);
+    mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
+
+    ret = mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy,
+                                (const unsigned char *)"rss_tls_client", 14);
+    if (ret != 0)
+        goto fail;
+
+    /* Load system CA certificates */
+    ret = mbedtls_x509_crt_parse_path(&ctx->cacert, "/etc/ssl/certs");
+    if (ret < 0) {
+        ret = mbedtls_x509_crt_parse_file(&ctx->cacert, "/etc/ssl/cert.pem");
+        if (ret < 0) {
+            RSS_WARN("TLS client: no CA certs found, server verification disabled");
+        }
+    }
+
+    ret = mbedtls_ssl_config_defaults(&ctx->conf, MBEDTLS_SSL_IS_CLIENT,
+                                      MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    if (ret != 0)
+        goto fail;
+
+    mbedtls_ssl_conf_rng(&ctx->conf, mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
+
+    if (ctx->cacert.version > 0) {
+        mbedtls_ssl_conf_ca_chain(&ctx->conf, &ctx->cacert, NULL);
+        mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    } else {
+        mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
+    }
+
+    RSS_INFO("TLS: client context initialized");
+    return ctx;
+
+fail:
+    rss_tls_client_free(ctx);
+    return NULL;
+}
+
+void rss_tls_client_free(rss_tls_client_ctx_t *ctx)
+{
+    if (!ctx)
+        return;
+    mbedtls_ssl_config_free(&ctx->conf);
+    mbedtls_x509_crt_free(&ctx->cacert);
+    mbedtls_ctr_drbg_free(&ctx->ctr_drbg);
+    mbedtls_entropy_free(&ctx->entropy);
+    free(ctx);
+}
+
+rss_tls_conn_t *rss_tls_connect(rss_tls_client_ctx_t *ctx, int fd, const char *hostname,
+                                int timeout_ms)
+{
+    rss_tls_conn_t *conn = calloc(1, sizeof(*conn));
+    if (!conn)
+        return NULL;
+
+    conn->fd = fd;
+    mbedtls_ssl_init(&conn->ssl);
+
+    if (timeout_ms > 0)
+        mbedtls_ssl_conf_read_timeout(&ctx->conf, timeout_ms);
+
+    int ret = mbedtls_ssl_setup(&conn->ssl, &ctx->conf);
+    if (ret != 0) {
+        free(conn);
+        return NULL;
+    }
+
+    if (hostname)
+        mbedtls_ssl_set_hostname(&conn->ssl, hostname);
+
+    mbedtls_ssl_set_bio(&conn->ssl, &conn->fd, bio_send, bio_recv, bio_recv_timeout);
+
+    while ((ret = mbedtls_ssl_handshake(&conn->ssl)) != 0) {
+        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            char errbuf[128];
+            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
+            RSS_ERROR("TLS client handshake failed: %s", errbuf);
+            mbedtls_ssl_free(&conn->ssl);
+            free(conn);
+            return NULL;
+        }
+    }
+
+    return conn;
+}
