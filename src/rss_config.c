@@ -345,6 +345,11 @@ void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key,
     rss_config_set_str(cfg, section, key, buf);
 }
 
+void rss_config_set_bool(rss_config_t *cfg, const char *section, const char *key, bool value)
+{
+    rss_config_set_str(cfg, section, key, value ? "true" : "false");
+}
+
 /* Write a config to a file (no merging) */
 static int config_write(rss_config_t *cfg, const char *path)
 {

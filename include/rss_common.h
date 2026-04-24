@@ -123,6 +123,9 @@ void rss_config_set_str(rss_config_t *cfg, const char *section, const char *key,
 /* Set an integer value in the running config. */
 void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key, int value);
 
+/* Set a boolean value in the running config. */
+void rss_config_set_bool(rss_config_t *cfg, const char *section, const char *key, bool value);
+
 /* Save running config to disk (atomic write). Returns 0 on success. */
 int rss_config_save(rss_config_t *cfg, const char *path);
 
