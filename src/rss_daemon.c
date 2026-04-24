@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <syslog.h>
 #include <errno.h>
+#include <sched.h>
 
 #define PID_DIR RSS_RUN_DIR
 #define PID_PATH_MAX 128
@@ -199,6 +200,47 @@ volatile sig_atomic_t *rss_signal_init(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* CPU affinity and scheduling policy                                  */
+/* ------------------------------------------------------------------ */
+
+static int get_num_cpus(void)
+{
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return (n > 0) ? (int)n : 1;
+}
+
+static void apply_scheduling(rss_config_t *cfg, const char *name)
+{
+    int ncpus = get_num_cpus();
+
+    int cpu = rss_config_get_int(cfg, name, "cpu_affinity", -1);
+    if (cpu >= 0) {
+        if (ncpus <= 1) {
+            RSS_DEBUG("%s: cpu_affinity=%d ignored (single-core)", name, cpu);
+        } else if (cpu >= ncpus) {
+            RSS_WARN("%s: cpu_affinity=%d out of range (0-%d)", name, cpu, ncpus - 1);
+        } else {
+            cpu_set_t set;
+            CPU_ZERO(&set);
+            CPU_SET(cpu, &set);
+            if (sched_setaffinity(0, sizeof(set), &set) == 0)
+                RSS_INFO("%s: pinned to CPU%d", name, cpu);
+            else
+                RSS_WARN("%s: sched_setaffinity(%d) failed: %s", name, cpu, strerror(errno));
+        }
+    }
+
+    int prio = rss_config_get_int(cfg, name, "sched_priority", -1);
+    if (prio > 0) {
+        struct sched_param sp = {.sched_priority = prio};
+        if (sched_setscheduler(0, SCHED_FIFO, &sp) == 0)
+            RSS_INFO("%s: SCHED_FIFO priority %d", name, prio);
+        else
+            RSS_WARN("%s: sched_setscheduler(FIFO, %d) failed: %s", name, prio, strerror(errno));
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Daemon init helper                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -284,8 +326,7 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
 
     /* Log to both stderr and syslog before daemonize() — terminal is still
      * attached, and errors like missing config should be visible everywhere. */
-    rss_log_init(name, debug ? RSS_LOG_TRACE : RSS_LOG_INFO,
-                 RSS_LOG_TARGET_BOTH, NULL);
+    rss_log_init(name, debug ? RSS_LOG_TRACE : RSS_LOG_INFO, RSS_LOG_TARGET_BOTH, NULL);
 
     ctx->cfg = rss_config_load(config_path);
     if (!ctx->cfg) {
@@ -335,6 +376,9 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     }
 
     ctx->running = rss_signal_init();
+
+    apply_scheduling(ctx->cfg, name);
+
     RSS_INFO("%s starting", name);
     return 0;
 }
