@@ -152,9 +152,15 @@ int rss_daemon_check(const char *name);
 /* Install common signal handlers:
  * - SIGTERM/SIGINT -> set running=false (clean shutdown)
  * - SIGHUP/SIGPIPE -> ignore
- * Returns the "running" flag pointer that the daemon should poll
- * in its main loop: while (*running) { ... } */
+ * Returns the "running" flag pointer. Use rss_running() to read it
+ * from threads — direct dereference races with the signal handler. */
 volatile sig_atomic_t *rss_signal_init(void);
+
+/* Thread-safe read of the running flag (atomic load). */
+static inline int rss_running(volatile sig_atomic_t *flag)
+{
+	return __atomic_load_n((int *)flag, __ATOMIC_RELAXED);
+}
 
 /* ================================================================
  * Timestamp Utilities

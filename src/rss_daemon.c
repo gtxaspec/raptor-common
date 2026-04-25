@@ -16,6 +16,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <syslog.h>
+#include <stdatomic.h>
 #include <errno.h>
 #include <sched.h>
 
@@ -26,12 +27,12 @@
 /* Signal state                                                        */
 /* ------------------------------------------------------------------ */
 
-static volatile sig_atomic_t g_running = 1;
+static _Atomic int g_running = 1;
 
 static void sig_term_handler(int sig)
 {
     (void)sig;
-    g_running = 0;
+    atomic_store_explicit(&g_running, 0, memory_order_relaxed);
 }
 
 /* ------------------------------------------------------------------ */
@@ -171,7 +172,7 @@ volatile sig_atomic_t *rss_signal_init(void)
 {
     struct sigaction sa;
 
-    g_running = 1;
+    atomic_store(&g_running, 1);
 
     /* SIGTERM, SIGINT → clean shutdown */
     memset(&sa, 0, sizeof(sa));
@@ -196,7 +197,7 @@ volatile sig_atomic_t *rss_signal_init(void)
     sa.sa_flags = 0;
     sigaction(SIGPIPE, &sa, NULL);
 
-    return &g_running;
+    return (volatile sig_atomic_t *)&g_running;
 }
 
 /* ------------------------------------------------------------------ */
