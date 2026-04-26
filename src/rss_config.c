@@ -145,7 +145,9 @@ rss_config_t *rss_config_load(const char *path)
             char *end = strchr(s, ']');
             if (end) {
                 *end = '\0';
-                rss_strlcpy(current_section, rss_trim(s + 1), sizeof(current_section));
+                if (rss_strlcpy(current_section, rss_trim(s + 1), sizeof(current_section)) >=
+                    sizeof(current_section))
+                    RSS_WARN("config: section name truncated (max %d)", MAX_SECN - 1);
             }
             continue;
         }
