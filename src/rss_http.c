@@ -9,20 +9,28 @@
 #include <strings.h> /* strncasecmp */
 #include <stdint.h>
 
-/* Base64 decode table — built once by rss_base64_init() */
+/* Base64 decode table — self-initializing on first use.
+ * 0xFF = invalid character (skipped by decoder). */
 static uint8_t b64_table[256];
+static bool b64_ready;
 
-void rss_base64_init(void)
+static void b64_ensure_init(void)
 {
+    if (b64_ready)
+        return;
     static const char b64_chars[] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     memset(b64_table, 0xFF, sizeof(b64_table));
     for (int i = 0; b64_chars[i]; i++)
         b64_table[(uint8_t)b64_chars[i]] = (uint8_t)i;
+    b64_ready = true;
 }
+
+void rss_base64_init(void) { b64_ensure_init(); }
 
 int rss_base64_decode(const char *in, size_t in_len, char *out, size_t out_max)
 {
+    b64_ensure_init();
     size_t out_len = 0;
     uint32_t buf = 0;
     int bits = 0;
