@@ -118,22 +118,21 @@ bool rss_secure_compare(const char *a, const char *b)
     size_t alen = strlen(a);
     size_t blen = strlen(b);
 
+    /* Reject inputs exceeding buffer size — avoids silent tail truncation */
+    if (alen > 255 || blen > 255)
+        return false;
+
     /* Copy into fixed-size zero-initialized buffers so the comparison
-     * loop is branchless — no conditional indexing that could compile
-     * to a data-dependent branch on architectures without CMOV. */
+     * loop is constant-length and branchless — always iterates 256 bytes
+     * regardless of input lengths. Zero-padding means the tail comparison
+     * detects length differences without a separate length check. */
     unsigned char buf_a[256] = {0};
     unsigned char buf_b[256] = {0};
-    size_t ca = alen > sizeof(buf_a) ? sizeof(buf_a) : alen;
-    size_t cb = blen > sizeof(buf_b) ? sizeof(buf_b) : blen;
-    memcpy(buf_a, a, ca);
-    memcpy(buf_b, b, cb);
+    memcpy(buf_a, a, alen);
+    memcpy(buf_b, b, blen);
 
-    size_t maxlen = alen > blen ? alen : blen;
-    if (maxlen > sizeof(buf_a))
-        maxlen = sizeof(buf_a);
-
-    volatile unsigned char diff = (unsigned char)(alen ^ blen);
-    for (size_t i = 0; i < maxlen; i++)
+    volatile unsigned int diff = 0;
+    for (size_t i = 0; i < 256; i++)
         diff |= buf_a[i] ^ buf_b[i];
     return diff == 0;
 }
