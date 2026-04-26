@@ -27,12 +27,12 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
 {
     cJSON *root = cJSON_Parse(cmd_json);
     if (!root)
-        return -1;
+        return rss_ctrl_resp_error(resp_buf, resp_buf_size, "malformed JSON");
 
     cJSON *cmd_obj = cJSON_GetObjectItemCaseSensitive(root, "cmd");
     if (!cJSON_IsString(cmd_obj) || !cmd_obj->valuestring) {
         cJSON_Delete(root);
-        return -1;
+        return -1; /* no cmd field — let daemon-specific handler try */
     }
     const char *cmd = cmd_obj->valuestring;
 
