@@ -266,16 +266,19 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     bool show_help = false;
     int opt;
 
-    /* Banner — always first output, before any other action */
-    const char *plat = rss_build_platform ? rss_build_platform : "unknown";
+    /* Banner — always first output, before any other action.
+     * Weak symbols: test address, not value (value deref crashes if unlinked). */
+    const char *hash = &rss_build_hash ? rss_build_hash : "unknown";
+    const char *btime = &rss_build_time ? rss_build_time : "unknown";
+    const char *plat = &rss_build_platform ? rss_build_platform : "unknown";
     char banner[256];
     if (features)
         snprintf(banner, sizeof(banner),
-                 "Raptor Streaming System — %s [%s] built for %s on %s (%s)", name, rss_build_hash,
-                 plat, rss_build_time, features);
+                 "Raptor Streaming System — %s [%s] built for %s on %s (%s)", name, hash, plat,
+                 btime, features);
     else
         snprintf(banner, sizeof(banner), "Raptor Streaming System — %s [%s] built for %s on %s",
-                 name, rss_build_hash, plat, rss_build_time);
+                 name, hash, plat, btime);
     fprintf(stderr, "%s\n", banner);
     openlog(name, LOG_PID, LOG_DAEMON);
     syslog(LOG_INFO, "%s", banner);
