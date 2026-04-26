@@ -174,6 +174,9 @@ rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms)
      * and bio_send blocks on the blocking socket used by all callers. */
     while ((ret = mbedtls_ssl_handshake(&conn->ssl)) != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            char errbuf[128];
+            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
+            RSS_DEBUG("TLS accept handshake failed: %s", errbuf);
             mbedtls_ssl_free(&conn->ssl);
             free(conn);
             return NULL;
