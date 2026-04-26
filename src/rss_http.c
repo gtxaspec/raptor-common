@@ -65,8 +65,8 @@ bool rss_http_check_basic_auth(const char *request, const char *user, const char
         return true;
 
     /* Case-insensitive header name match per RFC 7230 */
-    const char *needle = "Authorization: Basic ";
-    size_t needle_len = 21; /* strlen(needle) */
+    static const char needle[] = "Authorization: Basic ";
+    size_t needle_len = sizeof(needle) - 1;
     const char *auth = NULL;
     const char *p = request;
     while (*p) {
