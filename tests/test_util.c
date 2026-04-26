@@ -145,6 +145,39 @@ TEST secure_compare_lengths(void)
 	PASS();
 }
 
+TEST secure_compare_null(void)
+{
+	ASSERT_FALSE(rss_secure_compare(NULL, "x"));
+	ASSERT_FALSE(rss_secure_compare("x", NULL));
+	ASSERT_FALSE(rss_secure_compare(NULL, NULL));
+	PASS();
+}
+
+TEST secure_compare_overflow(void)
+{
+	/* Inputs > 255 bytes must return false (not silently truncate) */
+	char long_a[300], long_b[300];
+	memset(long_a, 'A', sizeof(long_a));
+	memset(long_b, 'A', sizeof(long_b));
+	long_a[299] = '\0';
+	long_b[299] = '\0';
+	ASSERT_FALSE(rss_secure_compare(long_a, long_b));
+	PASS();
+}
+
+TEST secure_compare_length_multiple_256(void)
+{
+	/* Lengths differing by 256 must not compare as equal
+	 * (old bug: unsigned char XOR of lengths wrapped to 0) */
+	char a[10], b[266];
+	memset(a, 'X', 9);
+	a[9] = '\0';
+	memset(b, 'X', 265);
+	b[265] = '\0';
+	ASSERT_FALSE(rss_secure_compare(a, b));
+	PASS();
+}
+
 SUITE(util_suite)
 {
 	RUN_TEST(strlcpy_basic);
@@ -164,4 +197,7 @@ SUITE(util_suite)
 	RUN_TEST(secure_compare_equal);
 	RUN_TEST(secure_compare_differ);
 	RUN_TEST(secure_compare_lengths);
+	RUN_TEST(secure_compare_null);
+	RUN_TEST(secure_compare_overflow);
+	RUN_TEST(secure_compare_length_multiple_256);
 }
