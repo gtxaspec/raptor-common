@@ -254,7 +254,7 @@ int rss_write_file_atomic(const char *path, const void *data, int size)
     if (stat(path, &orig_st) == 0)
         mode = orig_st.st_mode & 07777;
 
-    int fd = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+    int fd = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, mode);
     if (fd < 0) {
         free(tmp_path);
         return -1;
