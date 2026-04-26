@@ -12,6 +12,7 @@
 #include <string.h>
 #include <strings.h> /* strcasecmp */
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/file.h>
@@ -459,6 +460,9 @@ int rss_config_save(rss_config_t *cfg, const char *path)
     char lockpath[512];
     snprintf(lockpath, sizeof(lockpath), "%s.lock", path);
     int lock_fd = open(lockpath, O_WRONLY | O_CREAT, 0644);
+    if (lock_fd < 0)
+        RSS_WARN("config: failed to acquire save lock (%s), proceeding unserialized",
+                 strerror(errno));
     if (lock_fd >= 0)
         flock(lock_fd, LOCK_EX);
 
