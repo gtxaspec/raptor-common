@@ -164,6 +164,7 @@ rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms)
 
     int ret = mbedtls_ssl_setup(&conn->ssl, &ctx->conf);
     if (ret != 0) {
+        RSS_ERROR("TLS accept: ssl_setup failed: -0x%04x", (unsigned)-ret);
         free(conn);
         return NULL;
     }
@@ -319,6 +320,7 @@ rss_tls_conn_t *rss_tls_connect(rss_tls_client_ctx_t *ctx, int fd, const char *h
 
     int ret = mbedtls_ssl_setup(&conn->ssl, &ctx->conf);
     if (ret != 0) {
+        RSS_ERROR("TLS connect: ssl_setup failed: -0x%04x", (unsigned)-ret);
         free(conn);
         return NULL;
     }
