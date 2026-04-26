@@ -40,7 +40,9 @@ rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms);
 
 /*
  * Initialize a TLS client context for outgoing connections.
- * No certificate needed — validates server cert against system CA bundle.
+ * Loads system CA bundle from /etc/ssl/certs or /etc/ssl/cert.pem.
+ * Returns NULL if no CA certs are available (refuses to create an
+ * unverified client). Server certificate is verified as REQUIRED.
  */
 rss_tls_client_ctx_t *rss_tls_client_init(void);
 

@@ -252,13 +252,13 @@ rss_tls_client_ctx_t *rss_tls_client_init(void)
     if (ret != 0)
         goto fail;
 
-    /* Load system CA certificates */
+    /* Load system CA certificates — required for server verification */
     ret = mbedtls_x509_crt_parse_path(&ctx->cacert, "/etc/ssl/certs");
-    if (ret < 0) {
+    if (ret < 0)
         ret = mbedtls_x509_crt_parse_file(&ctx->cacert, "/etc/ssl/cert.pem");
-        if (ret < 0) {
-            RSS_WARN("TLS client: no CA certs found, server verification disabled");
-        }
+    if (ctx->cacert.version == 0) {
+        RSS_ERROR("TLS client: no CA certs loaded, cannot verify servers");
+        goto fail;
     }
 
     ret = mbedtls_ssl_config_defaults(&ctx->conf, MBEDTLS_SSL_IS_CLIENT,
@@ -267,13 +267,8 @@ rss_tls_client_ctx_t *rss_tls_client_init(void)
         goto fail;
 
     mbedtls_ssl_conf_rng(&ctx->conf, mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
-
-    if (ctx->cacert.version > 0) {
-        mbedtls_ssl_conf_ca_chain(&ctx->conf, &ctx->cacert, NULL);
-        mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-    } else {
-        mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
-    }
+    mbedtls_ssl_conf_ca_chain(&ctx->conf, &ctx->cacert, NULL);
+    mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 
     RSS_INFO("TLS: client context initialized");
     return ctx;
