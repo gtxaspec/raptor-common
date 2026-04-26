@@ -303,6 +303,11 @@ void rss_tls_client_free(rss_tls_client_ctx_t *ctx)
 rss_tls_conn_t *rss_tls_connect(rss_tls_client_ctx_t *ctx, int fd, const char *hostname,
                                 int timeout_ms)
 {
+    if (!hostname || !hostname[0]) {
+        RSS_ERROR("TLS connect: hostname required for certificate verification");
+        return NULL;
+    }
+
     rss_tls_conn_t *conn = calloc(1, sizeof(*conn));
     if (!conn)
         return NULL;
@@ -318,8 +323,13 @@ rss_tls_conn_t *rss_tls_connect(rss_tls_client_ctx_t *ctx, int fd, const char *h
         return NULL;
     }
 
-    if (hostname)
-        mbedtls_ssl_set_hostname(&conn->ssl, hostname);
+    ret = mbedtls_ssl_set_hostname(&conn->ssl, hostname);
+    if (ret != 0) {
+        RSS_ERROR("TLS connect: set_hostname failed: %d", ret);
+        mbedtls_ssl_free(&conn->ssl);
+        free(conn);
+        return NULL;
+    }
 
     mbedtls_ssl_set_bio(&conn->ssl, &conn->fd, bio_send, bio_recv, bio_recv_timeout);
 
