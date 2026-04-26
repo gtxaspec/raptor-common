@@ -161,7 +161,11 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
 
         char *s = cJSON_PrintUnformatted(resp);
         if (s) {
-            len = (int)rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
+            size_t sl = rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
+            if (sl >= (size_t)resp_buf_size)
+                len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "response truncated");
+            else
+                len = (int)sl;
             free(s);
         } else {
             len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
