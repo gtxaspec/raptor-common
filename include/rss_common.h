@@ -95,11 +95,15 @@ rss_config_t *rss_config_load(const char *path);
 void rss_config_free(rss_config_t *cfg);
 
 /* Get string value. Returns default_val if key not found.
- * Section can be NULL for global keys. */
+ * Section can be NULL for global keys.
+ *
+ * NOT thread-safe: lazily inserts default_val into the config on miss
+ * (for config-get-section display). All access must be from a single
+ * thread (main/ctrl via epoll). */
 const char *rss_config_get_str(rss_config_t *cfg, const char *section, const char *key,
                                const char *default_val);
 
-/* Get integer value. */
+/* Get integer value. Same thread-safety caveat as rss_config_get_str. */
 int rss_config_get_int(rss_config_t *cfg, const char *section, const char *key, int default_val);
 
 /* Get boolean value (true/false, yes/no, 1/0, on/off). */
