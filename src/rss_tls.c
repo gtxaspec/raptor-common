@@ -37,7 +37,10 @@ struct rss_tls_conn {
 static int bio_send(void *ctx, const unsigned char *buf, size_t len)
 {
     int fd = *(int *)ctx;
-    ssize_t ret = write(fd, buf, len);
+    ssize_t ret;
+    do {
+        ret = write(fd, buf, len);
+    } while (ret < 0 && errno == EINTR);
     if (ret < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return MBEDTLS_ERR_SSL_WANT_WRITE;
@@ -49,7 +52,10 @@ static int bio_send(void *ctx, const unsigned char *buf, size_t len)
 static int bio_recv(void *ctx, unsigned char *buf, size_t len)
 {
     int fd = *(int *)ctx;
-    ssize_t ret = read(fd, buf, len);
+    ssize_t ret;
+    do {
+        ret = read(fd, buf, len);
+    } while (ret < 0 && errno == EINTR);
     if (ret < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return MBEDTLS_ERR_SSL_WANT_READ;
@@ -64,7 +70,10 @@ static int bio_recv_timeout(void *ctx, unsigned char *buf, size_t len, uint32_t 
 {
     int fd = *(int *)ctx;
     struct pollfd pfd = {.fd = fd, .events = POLLIN};
-    int ret = poll(&pfd, 1, timeout);
+    int ret;
+    do {
+        ret = poll(&pfd, 1, timeout);
+    } while (ret < 0 && errno == EINTR);
     if (ret <= 0)
         return MBEDTLS_ERR_SSL_TIMEOUT;
     return bio_recv(ctx, buf, len);
@@ -149,10 +158,10 @@ rss_tls_conn_t *rss_tls_accept(rss_tls_ctx_t *ctx, int fd, int timeout_ms)
     conn->fd = fd;
     mbedtls_ssl_init(&conn->ssl);
 
-    /* Set read timeout on shared config before setup. Modifies the shared
-     * config — safe because accept is single-threaded in all callers. */
-    if (timeout_ms > 0)
-        mbedtls_ssl_conf_read_timeout(&ctx->conf, timeout_ms);
+    /* Always set timeout (0 = no timeout). Must be set before ssl_setup
+     * since mbedTLS copies the config. Unconditional to prevent stale
+     * timeout from a previous connection leaking into the next one. */
+    mbedtls_ssl_conf_read_timeout(&ctx->conf, timeout_ms);
 
     int ret = mbedtls_ssl_setup(&conn->ssl, &ctx->conf);
     if (ret != 0) {
@@ -299,8 +308,7 @@ rss_tls_conn_t *rss_tls_connect(rss_tls_client_ctx_t *ctx, int fd, const char *h
     conn->fd = fd;
     mbedtls_ssl_init(&conn->ssl);
 
-    if (timeout_ms > 0)
-        mbedtls_ssl_conf_read_timeout(&ctx->conf, timeout_ms);
+    mbedtls_ssl_conf_read_timeout(&ctx->conf, timeout_ms);
 
     int ret = mbedtls_ssl_setup(&conn->ssl, &ctx->conf);
     if (ret != 0) {
