@@ -37,33 +37,17 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
     const char *cmd = cmd_obj->valuestring;
 
     if (strcmp(cmd, "config-get-section") == 0) {
-        int len = 0;
+        int len;
         cJSON *sec_obj = cJSON_GetObjectItemCaseSensitive(root, "section");
         if (cJSON_IsString(sec_obj) && sec_obj->valuestring) {
             const char *section = sec_obj->valuestring;
             cJSON *resp = cJSON_CreateObject();
-            if (!resp) {
-                len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
-                cJSON_Delete(root);
-                return len;
-            }
             cJSON_AddStringToObject(resp, "status", "ok");
             cJSON_AddStringToObject(resp, "section", section);
             cJSON *keys_obj = cJSON_AddObjectToObject(resp, "keys");
             if (keys_obj)
                 rss_config_foreach(cfg, section, section_dump_cb, keys_obj);
-            char *s = cJSON_PrintUnformatted(resp);
-            if (s) {
-                size_t sl = rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
-                if (sl >= (size_t)resp_buf_size)
-                    len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "response truncated");
-                else
-                    len = (int)sl;
-                free(s);
-            } else {
-                len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
-            }
-            cJSON_Delete(resp);
+            len = rss_ctrl_resp_json(resp_buf, resp_buf_size, resp);
         } else {
             len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "need section");
         }
@@ -125,7 +109,6 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
 
     if (strcmp(cmd, "get-affinity") == 0) {
         cJSON_Delete(root);
-        int len;
         long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
 
         cpu_set_t set;
@@ -159,19 +142,7 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
         cJSON_AddStringToObject(resp, "policy", pol_str);
         cJSON_AddNumberToObject(resp, "priority", (double)sp.sched_priority);
 
-        char *s = cJSON_PrintUnformatted(resp);
-        if (s) {
-            size_t sl = rss_strlcpy(resp_buf, s, (size_t)resp_buf_size);
-            if (sl >= (size_t)resp_buf_size)
-                len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "response truncated");
-            else
-                len = (int)sl;
-            free(s);
-        } else {
-            len = rss_ctrl_resp_error(resp_buf, resp_buf_size, "alloc fail");
-        }
-        cJSON_Delete(resp);
-        return len;
+        return rss_ctrl_resp_json(resp_buf, resp_buf_size, resp);
     }
 
     cJSON_Delete(root);
