@@ -120,7 +120,6 @@ rss_tls_ctx_t *rss_tls_init(const char *cert_path, const char *key_path)
         goto fail;
 
     mbedtls_ssl_conf_rng(&ctx->conf, mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
-    mbedtls_ssl_conf_ca_chain(&ctx->conf, &ctx->cert, NULL);
 
     ret = mbedtls_ssl_conf_own_cert(&ctx->conf, &ctx->cert, &ctx->key);
     if (ret != 0)
