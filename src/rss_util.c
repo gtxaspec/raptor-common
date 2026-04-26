@@ -290,6 +290,23 @@ int rss_write_file_atomic(const char *path, const void *data, int size)
         return -1;
     }
 
+    /* Sync the directory entry so the rename survives a power loss */
+    {
+        char *dir = strdup(path);
+        if (dir) {
+            char *slash = strrchr(dir, '/');
+            if (slash) {
+                *slash = '\0';
+                int dfd = open(dir, O_RDONLY);
+                if (dfd >= 0) {
+                    fsync(dfd);
+                    close(dfd);
+                }
+            }
+            free(dir);
+        }
+    }
+
     free(tmp_path);
     return 0;
 }
