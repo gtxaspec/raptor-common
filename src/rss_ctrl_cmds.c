@@ -91,10 +91,10 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
     if (strcmp(cmd, "config-save") == 0) {
         cJSON_Delete(root);
         int ret = rss_config_save(cfg, config_path);
-        if (ret == 0)
+        if (ret == 0) {
             RSS_INFO("running config saved to %s", config_path);
-        if (ret == 0)
             return rss_ctrl_resp_ok(resp_buf, resp_buf_size);
+        }
         return rss_ctrl_resp_error(resp_buf, resp_buf_size, "config save failed");
     }
 
