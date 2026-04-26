@@ -52,6 +52,13 @@ static const int syslog_prio[] = {
 void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target_t target,
                   const char *log_file)
 {
+    /* Clean up previous init (rss_daemon_init calls us twice) */
+    closelog();
+    if (s_fp) {
+        fclose(s_fp);
+        s_fp = NULL;
+    }
+
     rss_strlcpy(s_daemon_name, daemon_name ? daemon_name : "rss", sizeof(s_daemon_name));
     s_level = level;
     s_target = target;
@@ -61,7 +68,6 @@ void rss_log_init(const char *daemon_name, rss_log_level_t level, rss_log_target
     } else if (target == RSS_LOG_TARGET_FILE && log_file) {
         s_fp = fopen(log_file, "a");
         if (!s_fp) {
-            /* Fall back to stderr if we can't open the log file */
             s_target = RSS_LOG_TARGET_STDERR;
             fprintf(stderr, "%s: failed to open log file %s, using stderr\n", s_daemon_name,
                     log_file);
