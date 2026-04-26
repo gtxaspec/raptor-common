@@ -55,6 +55,9 @@ int rss_base64_decode(const char *in, size_t in_len, char *out, size_t out_max)
 
 bool rss_http_check_basic_auth(const char *request, const char *user, const char *pass)
 {
+    if (!request || !user || !pass)
+        return false;
+
     /* SECURITY: empty username = auth disabled. Intentional for embedded
      * deployments that don't configure credentials. Callers should warn
      * at startup if http_user is empty and the endpoint is network-exposed. */
