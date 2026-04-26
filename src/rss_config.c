@@ -484,6 +484,16 @@ int rss_config_save(rss_config_t *cfg, const char *path)
         ret = config_write(cfg, path);
     }
 
+    /* Clear dirty flags on successful save */
+    if (ret == 0) {
+        rss_config_section_t *s;
+        for (s = cfg->sections; s; s = s->next) {
+            rss_config_entry_t *e;
+            for (e = s->entries; e; e = e->next)
+                e->dirty = false;
+        }
+    }
+
     if (lock_fd >= 0) {
         flock(lock_fd, LOCK_UN);
         close(lock_fd);
