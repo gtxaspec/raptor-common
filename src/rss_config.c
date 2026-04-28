@@ -133,8 +133,10 @@ rss_config_t *rss_config_load(const char *path)
 
     char current_section[MAX_SECN] = "";
     char line[MAX_LINE];
+    int lineno = 0;
 
     while (fgets(line, (int)sizeof(line), fp)) {
+        lineno++;
         char *s = rss_trim(line);
 
         /* Skip empty lines and full-line comments */
@@ -144,19 +146,21 @@ rss_config_t *rss_config_load(const char *path)
         /* Section header: [name] */
         if (*s == '[') {
             char *end = strchr(s, ']');
-            if (end) {
-                *end = '\0';
-                if (rss_strlcpy(current_section, rss_trim(s + 1), sizeof(current_section)) >=
-                    sizeof(current_section))
-                    RSS_WARN("config: section name truncated (max %d)", MAX_SECN - 1);
+            if (!end) {
+                RSS_WARN("%s:%d: malformed section (no ']'): %s", path, lineno, s);
+                continue;
             }
+            *end = '\0';
+            if (rss_strlcpy(current_section, rss_trim(s + 1), sizeof(current_section)) >=
+                sizeof(current_section))
+                RSS_WARN("%s:%d: section name truncated (max %d)", path, lineno, MAX_SECN - 1);
             continue;
         }
 
         /* Key = value */
         char *eq = strchr(s, '=');
         if (!eq) {
-            RSS_WARN("config: malformed line (no '='): %s", s);
+            RSS_WARN("%s:%d: malformed line (no '='): %s", path, lineno, s);
             continue;
         }
 
