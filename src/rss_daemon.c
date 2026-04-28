@@ -23,6 +23,11 @@
 #define PID_DIR RSS_RUN_DIR
 #define PID_PATH_MAX 128
 
+/* Weak reference to rss_ipc_set_log — resolves at link time only if
+ * librss_ipc is present. Avoids a compile-time dependency on rss_ipc.h. */
+typedef void (*rss_ipc_log_fn_t)(int, const char *, int, const char *, ...);
+extern void rss_ipc_set_log(rss_ipc_log_fn_t fn) __attribute__((weak));
+
 /* ------------------------------------------------------------------ */
 /* Signal state                                                        */
 /* ------------------------------------------------------------------ */
@@ -380,6 +385,11 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     }
 
     ctx->running = rss_signal_init();
+
+    /* Wire IPC library logging into our logger. Weak symbol — resolves
+     * to NULL if librss_ipc is not linked (e.g. standalone tests). */
+    if (rss_ipc_set_log)
+        rss_ipc_set_log((rss_ipc_log_fn_t)rss_log);
 
     apply_scheduling(ctx->cfg, name);
 
