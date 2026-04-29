@@ -3,3 +3,4 @@
 *.d
 rss_build.h
 tests/tests
+*.so
