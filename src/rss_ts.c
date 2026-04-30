@@ -142,10 +142,8 @@ static size_t write_pes_packets(uint8_t *buf, size_t buf_size, uint16_t pid, uin
             size_t stuff = payload_space - remaining;
 
             if (adapt_size > 0) {
-                /* Extend existing adaptation field */
-                memmove(pkt + hdr_size + stuff, pkt + hdr_size, 0);
+                /* Extend existing adaptation field (packet is pre-filled 0xFF) */
                 pkt[4] += (uint8_t)stuff;
-                memset(pkt + hdr_size, 0xFF, stuff);
             } else if (stuff == 1) {
                 /* Single byte: adaptation_field_length = 0 */
                 pkt[3] = (uint8_t)(0x30 | (*cc & 0x0F));
