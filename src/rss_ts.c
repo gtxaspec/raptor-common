@@ -291,13 +291,7 @@ size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size)
 
     /* Audio ES (if configured) */
     if (m->audio_stream_type != RSS_TS_STREAM_NONE) {
-        /* Map internal audio hints to ISO 13818-1 stream_type */
-        uint8_t ts_audio_type = m->audio_stream_type;
-
-        if (ts_audio_type >= 0x80)
-            ts_audio_type = 0x06; /* private data (§2.4.4.9) */
-
-        *p++ = ts_audio_type;
+        *p++ = m->audio_stream_type;
         *p++ = (uint8_t)(0xE0 | ((RSS_TS_PID_AUDIO >> 8) & 0x1F));
         *p++ = (uint8_t)(RSS_TS_PID_AUDIO & 0xFF);
 
@@ -311,18 +305,6 @@ size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size)
             *p++ = 'p';
             *p++ = 'u';
             *p++ = 's';
-        } else if (m->audio_stream_type == RSS_TS_STREAM_PCMU ||
-                   m->audio_stream_type == RSS_TS_STREAM_PCMA ||
-                   m->audio_stream_type == RSS_TS_STREAM_L16) {
-            /* §2.6.1 registration_descriptor for raw audio */
-            *p++ = 0xF0;
-            *p++ = 0x06;
-            *p++ = 0x05; /* descriptor_tag */
-            *p++ = 0x04; /* descriptor_length */
-            *p++ = 'L';
-            *p++ = 'P';
-            *p++ = 'C';
-            *p++ = 'M';
         } else {
             *p++ = 0xF0;
             *p++ = 0x00;

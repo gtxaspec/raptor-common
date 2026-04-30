@@ -29,13 +29,6 @@ extern "C" {
 #define RSS_TS_STREAM_OPUS 0x06
 #define RSS_TS_STREAM_NONE 0x00
 
-/* Internal: audio format hints for PMT descriptor selection.
- * All private audio maps to stream_type 0x06 in the PMT, but
- * different formats get different registration descriptors. */
-#define RSS_TS_STREAM_PCMU 0x80
-#define RSS_TS_STREAM_PCMA 0x81
-#define RSS_TS_STREAM_L16 0x82
-
 typedef struct {
     uint8_t cc_pat;
     uint8_t cc_pmt;
