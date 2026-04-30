@@ -296,8 +296,21 @@ size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size)
         *p++ = m->audio_stream_type;
         *p++ = (uint8_t)(0xE0 | ((RSS_TS_PID_AUDIO >> 8) & 0x1F));
         *p++ = (uint8_t)(RSS_TS_PID_AUDIO & 0xFF);
-        *p++ = 0xF0;
-        *p++ = 0x00;
+
+        if (m->audio_stream_type == RSS_TS_STREAM_OPUS) {
+            /* ISO 13818-1 §2.6.1 registration_descriptor for Opus */
+            *p++ = 0xF0;
+            *p++ = 0x06; /* ES_info_length = 6 */
+            *p++ = 0x05; /* descriptor_tag: registration_descriptor */
+            *p++ = 0x04; /* descriptor_length */
+            *p++ = 'O';
+            *p++ = 'p';
+            *p++ = 'u';
+            *p++ = 's';
+        } else {
+            *p++ = 0xF0;
+            *p++ = 0x00; /* ES_info_length = 0 */
+        }
     }
 
     /* Fill section length (includes from program_number to end of CRC) */
@@ -319,30 +332,42 @@ size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size)
 }
 
 size_t rss_ts_write_video(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size, const uint8_t *data,
-                          size_t len, uint64_t pts_90khz, bool is_idr)
+                          size_t len, uint64_t pts_90khz, uint64_t dts_90khz, bool is_idr)
 {
     if (len == 0)
         return 0;
 
-    /* PES header: start code (3) + stream_id (1) + length (2) + flags (3) + PTS (5) = 14 */
-    uint8_t pes_hdr[14];
+    bool has_dts = (dts_90khz != pts_90khz);
+    /* PES header: 9 base + 5 PTS + optional 5 DTS */
+    uint8_t pes_hdr[19];
+    size_t pes_hdr_len;
 
     pes_hdr[0] = 0x00;
     pes_hdr[1] = 0x00;
     pes_hdr[2] = 0x01;
     pes_hdr[3] = 0xE0; /* stream_id: video */
     pes_hdr[4] = 0x00;
-    pes_hdr[5] = 0x00; /* PES length = 0 (unbounded for video) */
-    pes_hdr[6] = 0x80; /* '10' marker bits */
-    pes_hdr[7] = 0x80; /* PTS present */
-    pes_hdr[8] = 0x05; /* PES header data length */
-    write_pts(pes_hdr + 9, 0x02, pts_90khz);
+    pes_hdr[5] = 0x00; /* PES length = 0 (unbounded, ISO 13818-1 §2.4.3.7) */
+    pes_hdr[6] = 0x84; /* '10' marker, data_alignment_indicator=1 (§2.4.3.7) */
 
-    /* PCR leads PTS slightly */
-    uint64_t pcr = pts_90khz > 3000 ? pts_90khz - 3000 : 0;
+    if (has_dts) {
+        pes_hdr[7] = 0xC0; /* PTS+DTS present (§2.4.3.7 PTS_DTS_flags='11') */
+        pes_hdr[8] = 0x0A; /* PES header data length = 10 */
+        write_pts(pes_hdr + 9, 0x03, pts_90khz);
+        write_pts(pes_hdr + 14, 0x01, dts_90khz);
+        pes_hdr_len = 19;
+    } else {
+        pes_hdr[7] = 0x80; /* PTS only (§2.4.3.7 PTS_DTS_flags='10') */
+        pes_hdr[8] = 0x05; /* PES header data length = 5 */
+        write_pts(pes_hdr + 9, 0x02, pts_90khz);
+        pes_hdr_len = 14;
+    }
+
+    /* PCR derived from DTS (§2.4.4.2: PCR ≤ DTS) */
+    uint64_t pcr = dts_90khz > 3000 ? dts_90khz - 3000 : 0;
 
     size_t written = write_pes_packets(buf, buf_size, RSS_TS_PID_VIDEO, &m->cc_video, pes_hdr,
-                                       sizeof(pes_hdr), data, len, pcr, true, is_idr);
+                                       pes_hdr_len, data, len, pcr, true, is_idr);
 
     m->pat_counter++;
     return written;
@@ -373,8 +398,8 @@ size_t rss_ts_write_audio(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size, const 
         pes_hdr[5] = 0x00;
     }
 
-    pes_hdr[6] = 0x80;
-    pes_hdr[7] = 0x80; /* PTS present */
+    pes_hdr[6] = 0x84; /* '10' marker, data_alignment_indicator=1 */
+    pes_hdr[7] = 0x80; /* PTS only */
     pes_hdr[8] = 0x05;
     write_pts(pes_hdr + 9, 0x02, pts_90khz);
 

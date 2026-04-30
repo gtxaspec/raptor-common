@@ -45,7 +45,7 @@ void rss_ts_init(rss_ts_mux_t *m, uint8_t video_type, uint8_t audio_type, uint32
 size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size);
 
 size_t rss_ts_write_video(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size, const uint8_t *data,
-                          size_t len, uint64_t pts_90khz, bool is_idr);
+                          size_t len, uint64_t pts_90khz, uint64_t dts_90khz, bool is_idr);
 
 size_t rss_ts_write_audio(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size, const uint8_t *data,
                           size_t len, uint64_t pts_90khz);
