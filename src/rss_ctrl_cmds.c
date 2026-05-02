@@ -145,6 +145,43 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
         return rss_ctrl_resp_json(resp_buf, resp_buf_size, resp);
     }
 
+    if (strcmp(cmd, "set-log-level") == 0) {
+        char level_str[16] = "";
+        cJSON *val_obj = cJSON_GetObjectItemCaseSensitive(root, "value");
+        if (cJSON_IsString(val_obj) && val_obj->valuestring)
+            snprintf(level_str, sizeof(level_str), "%s", val_obj->valuestring);
+        cJSON_Delete(root);
+
+        rss_log_level_t lvl;
+        if (strcmp(level_str, "fatal") == 0)
+            lvl = RSS_LOG_FATAL;
+        else if (strcmp(level_str, "error") == 0)
+            lvl = RSS_LOG_ERROR;
+        else if (strcmp(level_str, "warn") == 0)
+            lvl = RSS_LOG_WARN;
+        else if (strcmp(level_str, "info") == 0)
+            lvl = RSS_LOG_INFO;
+        else if (strcmp(level_str, "debug") == 0)
+            lvl = RSS_LOG_DEBUG;
+        else if (strcmp(level_str, "trace") == 0)
+            lvl = RSS_LOG_TRACE;
+        else
+            return rss_ctrl_resp_error(resp_buf, resp_buf_size,
+                                       "need value: fatal|error|warn|info|debug|trace");
+
+        rss_log_set_level(lvl);
+        RSS_INFO("log level changed to %s", level_str);
+        return rss_ctrl_resp_ok(resp_buf, resp_buf_size);
+    }
+
+    if (strcmp(cmd, "get-log-level") == 0) {
+        cJSON_Delete(root);
+        static const char *level_names[] = {"fatal", "error", "warn", "info", "debug", "trace"};
+        rss_log_level_t lvl = rss_log_get_level();
+        const char *name = (lvl <= RSS_LOG_TRACE) ? level_names[lvl] : "unknown";
+        return rss_ctrl_resp(resp_buf, resp_buf_size, "%s", name);
+    }
+
     cJSON_Delete(root);
     return -1; /* not handled */
 }
