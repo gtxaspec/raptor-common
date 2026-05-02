@@ -29,10 +29,14 @@ typedef void (*rss_ipc_log_fn_t)(int, const char *, int, const char *, ...);
 extern void rss_ipc_set_log(rss_ipc_log_fn_t fn) __attribute__((weak));
 
 /* ------------------------------------------------------------------ */
-/* Signal state                                                        */
+/* Signal and restart state                                            */
 /* ------------------------------------------------------------------ */
 
 static _Atomic int g_running = 1;
+static _Atomic int g_restart = 0;
+static int g_argc;
+static char **g_argv;
+static char g_exe_path[256];
 
 static void sig_term_handler(int sig)
 {
@@ -140,6 +144,9 @@ void rss_daemon_cleanup(const char *name)
     char path[PID_PATH_MAX];
     make_pid_path(path, (int)sizeof(path), name);
     unlink(path);
+
+    if (rss_daemon_restart_pending())
+        rss_daemon_exec(name);
 }
 
 int rss_daemon_check(const char *name)
@@ -377,6 +384,20 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
         rss_log_init(name, level, target, cfg_file[0] ? cfg_file : NULL);
     }
 
+    g_argc = argc;
+    g_argv = argv;
+    g_exe_path[0] = '\0';
+    ssize_t exe_len = readlink("/proc/self/exe", g_exe_path, sizeof(g_exe_path) - 1);
+    if (exe_len > 0) {
+        g_exe_path[exe_len] = '\0';
+    } else if (argv[0]) {
+        char *resolved = realpath(argv[0], NULL);
+        if (resolved) {
+            rss_strlcpy(g_exe_path, resolved, sizeof(g_exe_path));
+            free(resolved);
+        }
+    }
+
     if (rss_daemonize(name, foreground) < 0) {
         RSS_FATAL("daemonize failed");
         rss_config_free(ctx->cfg);
@@ -395,4 +416,23 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
 
     RSS_INFO("%s starting", name);
     return 0;
+}
+
+void rss_daemon_request_restart(void)
+{
+    atomic_store_explicit(&g_restart, 1, memory_order_relaxed);
+    atomic_store_explicit(&g_running, 0, memory_order_relaxed);
+}
+
+bool rss_daemon_restart_pending(void)
+{
+    return atomic_load_explicit(&g_restart, memory_order_relaxed) != 0;
+}
+
+void rss_daemon_exec(const char *name)
+{
+    const char *exe = g_exe_path[0] ? g_exe_path : g_argv[0];
+    RSS_INFO("%s restarting via exec: %s", name, exe);
+    execv(exe, g_argv);
+    RSS_FATAL("execv(%s) failed: %s", exe, strerror(errno));
 }

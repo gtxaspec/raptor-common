@@ -149,6 +149,17 @@ void rss_daemon_cleanup(const char *name);
 /* Check if a daemon is running. Returns PID if running, 0 if not, -1 on error. */
 int rss_daemon_check(const char *name);
 
+/* Request restart: sets restart flag and clears running flag.
+ * Call from a ctrl handler. The daemon's main loop exits,
+ * then calls rss_daemon_exec() after cleanup. */
+void rss_daemon_request_restart(void);
+
+/* Check if a restart was requested (vs normal shutdown). */
+bool rss_daemon_restart_pending(void);
+
+/* Re-exec the daemon binary. Call after cleanup, never returns on success. */
+void rss_daemon_exec(const char *name);
+
 /* ================================================================
  * Signal Handling
  * ================================================================ */

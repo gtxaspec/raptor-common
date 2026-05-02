@@ -145,6 +145,12 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
         return rss_ctrl_resp_json(resp_buf, resp_buf_size, resp);
     }
 
+    if (strcmp(cmd, "restart") == 0) {
+        cJSON_Delete(root);
+        rss_daemon_request_restart();
+        return rss_ctrl_resp(resp_buf, resp_buf_size, "restarting");
+    }
+
     if (strcmp(cmd, "set-log-level") == 0) {
         char level_str[16] = "";
         cJSON *val_obj = cJSON_GetObjectItemCaseSensitive(root, "value");
