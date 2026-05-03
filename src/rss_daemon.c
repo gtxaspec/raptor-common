@@ -418,6 +418,11 @@ int rss_daemon_init(rss_daemon_ctx_t *ctx, const char *name, int argc, char **ar
     return 0;
 }
 
+void rss_daemon_request_shutdown(void)
+{
+    atomic_store_explicit(&g_running, 0, memory_order_relaxed);
+}
+
 void rss_daemon_request_restart(void)
 {
     atomic_store_explicit(&g_restart, 1, memory_order_relaxed);
