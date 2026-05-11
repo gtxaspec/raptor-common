@@ -181,6 +181,32 @@ int rss_json_get_int(const char *json, const char *key, int *out)
     return 0;
 }
 
+int rss_json_get_nested_int(const char *json, const char *parent, const char *key, int *out)
+{
+    if (!json || !parent || !key || !out)
+        return -1;
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root)
+        return -1;
+
+    cJSON *obj = cJSON_GetObjectItemCaseSensitive(root, parent);
+    if (!cJSON_IsObject(obj)) {
+        cJSON_Delete(root);
+        return -1;
+    }
+
+    cJSON *val = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (!cJSON_IsNumber(val)) {
+        cJSON_Delete(root);
+        return -1;
+    }
+
+    *out = val->valueint;
+    cJSON_Delete(root);
+    return 0;
+}
+
 /* ================================================================
  * File Utilities
  * ================================================================ */

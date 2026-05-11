@@ -229,6 +229,9 @@ int rss_json_get_str(const char *json, const char *key, char *buf, int buf_size)
 /* Extract integer value for "key":123. Returns 0 on success, -1 if not found. */
 int rss_json_get_int(const char *json, const char *key, int *out);
 
+/* Extract integer from nested object: {"parent":{"key":123}}. Returns 0 on success. */
+int rss_json_get_nested_int(const char *json, const char *parent, const char *key, int *out);
+
 /* ================================================================
  * Daemon Init Helper
  *
