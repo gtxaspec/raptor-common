@@ -16,8 +16,10 @@
 #include <errno.h>
 #include <string.h>
 
-/* ST 0604.6 §7.1 Table 1 — H.264 Precision Time Stamp identifier */
-static const uint8_t misp_uuid_h264[16] = "MISPmicrosectime";
+/* ST 0604.6 §7.1 Table 1 — H.264 Precision Time Stamp identifier,
+ * the ASCII string "MISPmicrosectime" (no terminator) */
+static const uint8_t misp_uuid_h264[16] = {'M', 'I', 'S', 'P', 'm', 'i', 'c', 'r',
+                                           'o', 's', 'e', 'c', 't', 'i', 'm', 'e'};
 
 /* ST 0604.6 §7.2 — H.265 Precision (microsecond) Time Stamp identifier */
 static const uint8_t misp_uuid_h265[16] = {0xa8, 0x68, 0x7d, 0xd4, 0xd7, 0x59, 0x37, 0x58,
