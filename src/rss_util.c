@@ -13,6 +13,7 @@
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/timex.h>
 #include "cJSON.h"
 #include <fcntl.h>
 #include <errno.h>
@@ -34,6 +35,13 @@ int64_t rss_wallclock_us(void)
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+bool rss_ntp_synced(void)
+{
+    struct timex tx = {0};
+    int state = adjtimex(&tx);
+    return state >= 0 && state != TIME_ERROR && !(tx.status & STA_UNSYNC);
 }
 
 char *rss_format_timestamp(char *buf, int buf_size)

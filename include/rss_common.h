@@ -178,7 +178,7 @@ volatile sig_atomic_t *rss_signal_init(void);
 /* Thread-safe read of the running flag (atomic load). */
 static inline int rss_running(volatile sig_atomic_t *flag)
 {
-	return __atomic_load_n((int *)flag, __ATOMIC_RELAXED);
+    return __atomic_load_n((int *)flag, __ATOMIC_RELAXED);
 }
 
 /* ================================================================
@@ -190,6 +190,10 @@ int64_t rss_timestamp_us(void);
 
 /* Get wall-clock timestamp in microseconds */
 int64_t rss_wallclock_us(void);
+
+/* True when the system clock is NTP-disciplined (kernel STA_UNSYNC
+ * clear). Feeds the MISB ST 0603 time status in SEI timecodes. */
+bool rss_ntp_synced(void);
 
 /* Format timestamp as ISO 8601 string (YYYY-MM-DD HH:MM:SS) into buf.
  * buf must be at least 20 bytes. Returns buf. */

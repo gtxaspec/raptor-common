@@ -5,6 +5,7 @@ extern SUITE(util_suite);
 extern SUITE(json_suite);
 extern SUITE(http_suite);
 extern SUITE(file_suite);
+extern SUITE(sei_suite);
 
 GREATEST_MAIN_DEFS();
 
@@ -16,5 +17,6 @@ int main(int argc, char **argv)
 	RUN_SUITE(json_suite);
 	RUN_SUITE(http_suite);
 	RUN_SUITE(file_suite);
+	RUN_SUITE(sei_suite);
 	GREATEST_MAIN_END();
 }
