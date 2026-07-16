@@ -28,8 +28,8 @@ static const uint8_t sign_uuid[16] = {0xb0, 0x50, 0xbf, 0x07, 0x88, 0x56, 0x45, 
 
 /* TIFF layout offsets (relative to TIFF header start) */
 #define TIFF_SIZE 102
-#define EXIF_PAYLOAD (6 + TIFF_SIZE)     /* "Exif\0\0" + TIFF        */
-#define EXIF_SEGMENT (4 + EXIF_PAYLOAD)  /* marker + length + payload */
+#define EXIF_PAYLOAD (6 + TIFF_SIZE)    /* "Exif\0\0" + TIFF        */
+#define EXIF_SEGMENT (4 + EXIF_PAYLOAD) /* marker + length + payload */
 
 static void put16le(uint8_t *p, uint16_t v)
 {
@@ -80,7 +80,7 @@ int rss_jpeg_insert_exif(uint8_t *buf, size_t cap, size_t len, uint64_t utc_us)
     uint8_t *ifd0 = tiff + 8;
     put16le(ifd0, 1);
     tiff_entry(ifd0 + 2, 0x8769, 4 /*LONG*/, 1, 8 + 2 + 12 + 4); /* = 26 */
-    put32le(ifd0 + 14, 0); /* next IFD */
+    put32le(ifd0 + 14, 0);                                       /* next IFD */
 
     /* Exif IFD: DateTimeOriginal, OffsetTimeOriginal, SubSecTimeOriginal */
     uint8_t *exif = tiff + 26;
@@ -100,9 +100,9 @@ int rss_jpeg_insert_exif(uint8_t *buf, size_t cap, size_t len, uint64_t utc_us)
     snprintf(sub, sizeof(sub), "%06u", (unsigned)(utc_us % 1000000));
 
     uint8_t *values = tiff + val;
-    memcpy(values, dt, 20);            /* 19 chars + NUL */
-    memcpy(values + 20, "+00:00", 7);  /* UTC declaration */
-    memcpy(values + 27, sub, 7);       /* 6 digits + NUL  */
+    memcpy(values, dt, 20);           /* 19 chars + NUL */
+    memcpy(values + 20, "+00:00", 7); /* UTC declaration */
+    memcpy(values + 27, sub, 7);      /* 6 digits + NUL  */
 
     return (int)(len + EXIF_SEGMENT);
 }
@@ -126,7 +126,7 @@ int rss_jpeg_sign(uint8_t *buf, size_t cap, size_t len, const rss_sign_key_t *ke
 
     uint8_t *p = buf + pos;
     *p++ = 0xff;
-    *p++ = 0xef; /* APP15 */
+    *p++ = 0xef;                                /* APP15 */
     uint16_t seglen = RSS_JPEG_SIG_SEGMENT - 2; /* excludes marker */
     *p++ = (seglen >> 8) & 0xff;
     *p++ = seglen & 0xff;
@@ -187,9 +187,16 @@ int rss_jpeg_get_exif_time(const uint8_t *buf, size_t len, uint64_t *utc_us)
         if (marker == 0xe1 && seglen >= 2 + EXIF_PAYLOAD &&
             memcmp(buf + pos + 4, "Exif\0\0", 6) == 0) {
             const uint8_t *tiff = buf + pos + 10;
-            /* Fixed layout written by rss_jpeg_insert_exif */
-            const char *dt = (const char *)tiff + 68;
-            const char *sub = (const char *)tiff + 95;
+            /* Fixed layout written by rss_jpeg_insert_exif. Copy the
+             * fields out and NUL-terminate before parsing: the bytes
+             * are untrusted (rverify reads arbitrary files) and sscanf
+             * must never scan past them. */
+            char dt[21];
+            char sub[8];
+            memcpy(dt, tiff + 68, 20);
+            dt[20] = '\0';
+            memcpy(sub, tiff + 95, 7);
+            sub[7] = '\0';
             struct tm tm;
             memset(&tm, 0, sizeof(tm));
             if (sscanf(dt, "%4d:%2d:%2d %2d:%2d:%2d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
