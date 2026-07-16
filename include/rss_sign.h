@@ -17,9 +17,9 @@ extern "C" {
 #endif
 
 typedef struct {
-	uint8_t secret[64]; /* monocypher ed25519 secret key */
-	uint8_t public[32];
-	uint8_t fingerprint[8]; /* SHA-512(public)[0..7] */
+    uint8_t secret[64]; /* monocypher ed25519 secret key */
+    uint8_t public[32];
+    uint8_t fingerprint[8]; /* SHA-512(public)[0..7] */
 } rss_sign_key_t;
 
 /*
