@@ -107,6 +107,7 @@ int rss_sign_key_load(rss_sign_key_t *key, const char *key_path)
     }
 
     crypto_ed25519_key_pair(key->secret, key->public, seed);
+    crypto_wipe(seed, sizeof(seed));
 
     uint8_t digest[64];
     crypto_sha512(digest, key->public, sizeof(key->public));
