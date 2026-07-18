@@ -42,19 +42,31 @@ int rss_aac_asc(int aot, int sample_rate, int channels, uint8_t *buf)
         int ext_idx = rss_aac_rate_index(sample_rate);
         if (core_idx < 0 || ext_idx < 0)
             return -1;
-        /* AOT(5)=SBR freqIdx(4)=core chanCfg(4) extFreqIdx(4)
-         * AOT(5)=LC GASpecificConfig(3) = 25 bits, zero-padded */
-        uint32_t v = 0;
-        v |= (uint32_t)RSS_AAC_AOT_SBR << 27;
-        v |= (uint32_t)core_idx << 23;
-        v |= (uint32_t)channels << 19;
-        v |= (uint32_t)ext_idx << 15;
-        v |= (uint32_t)RSS_AAC_AOT_LC << 10;
-        buf[0] = (uint8_t)(v >> 24);
-        buf[1] = (uint8_t)(v >> 16);
-        buf[2] = (uint8_t)(v >> 8);
-        buf[3] = (uint8_t)(v & 0xFF);
-        return 4;
+        /* Backward-compatible explicit signaling (ISO 14496-3 1.6.6): a
+         * plain LC ASC at the core rate followed by a syncExtension
+         * announcing SBR and the extension rate. Legacy LC decoders play
+         * the core; SBR decoders upsample. Matches the form faac itself
+         * emits, so SDP/esds signaling is byte-identical to the
+         * encoder's own ASC.
+         *
+         * AOT(5)=LC freqIdx(4)=core chanCfg(4) GASpecific(3)
+         * syncExtensionType(11)=0x2b7 AOT(5)=SBR sbrPresent(1)=1
+         * extFreqIdx(4) = 37 bits, zero-padded to 5 bytes */
+        uint64_t v = 0;
+        v |= (uint64_t)RSS_AAC_AOT_LC << 35;
+        v |= (uint64_t)core_idx << 31;
+        v |= (uint64_t)channels << 27;
+        /* GASpecificConfig: 000 */
+        v |= (uint64_t)0x2b7 << 13;
+        v |= (uint64_t)RSS_AAC_AOT_SBR << 8;
+        v |= (uint64_t)1 << 7;
+        v |= (uint64_t)ext_idx << 3;
+        buf[0] = (uint8_t)(v >> 32);
+        buf[1] = (uint8_t)(v >> 24);
+        buf[2] = (uint8_t)(v >> 16);
+        buf[3] = (uint8_t)(v >> 8);
+        buf[4] = (uint8_t)(v & 0xFF);
+        return 5;
     }
 
     return -1;

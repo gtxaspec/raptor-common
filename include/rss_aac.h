@@ -9,7 +9,7 @@
 #define RSS_AAC_AOT_LC 2
 #define RSS_AAC_AOT_SBR 5 /* HE-AAC v1: SBR extension wrapping an LC core */
 
-#define RSS_AAC_ASC_MAX 4
+#define RSS_AAC_ASC_MAX 6
 
 /*
  * Build the AudioSpecificConfig for an AAC stream.

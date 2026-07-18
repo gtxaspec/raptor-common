@@ -26,27 +26,31 @@ TEST asc_lc_48k_mono(void)
 
 TEST asc_he_48k_mono(void)
 {
+    /* Backward-compatible form, byte-identical to faac's own ASC for
+     * 48kHz mono HE-AAC v1 (verified against faac_encoder_asc on HW):
+     * LC@24k core + syncExtension(SBR, ext 48k) = 13 08 56 E5 98 */
     uint8_t buf[RSS_AAC_ASC_MAX];
     int len = rss_aac_asc(RSS_AAC_AOT_SBR, 48000, 1, buf);
-    ASSERT_EQ(4, len);
-    /* AOT=5, core idx=6 (24000), ch=1, ext idx=3 (48000), core AOT=2 */
-    ASSERT_EQ(0x2B, buf[0]);
-    ASSERT_EQ(0x09, buf[1]);
-    ASSERT_EQ(0x88, buf[2]);
-    ASSERT_EQ(0x00, buf[3]);
+    ASSERT_EQ(5, len);
+    ASSERT_EQ(0x13, buf[0]);
+    ASSERT_EQ(0x08, buf[1]);
+    ASSERT_EQ(0x56, buf[2]);
+    ASSERT_EQ(0xE5, buf[3]);
+    ASSERT_EQ(0x98, buf[4]);
     PASS();
 }
 
-TEST asc_he_44k_stereo_reference(void)
+TEST asc_he_44k_stereo(void)
 {
-    /* Well-known reference ASC: HE-AAC v1 44.1kHz stereo = 2B 92 08 00 */
+    /* LC@22.05k core (idx 7), stereo, ext 44.1k (idx 4) */
     uint8_t buf[RSS_AAC_ASC_MAX];
     int len = rss_aac_asc(RSS_AAC_AOT_SBR, 44100, 2, buf);
-    ASSERT_EQ(4, len);
-    ASSERT_EQ(0x2B, buf[0]);
-    ASSERT_EQ(0x92, buf[1]);
-    ASSERT_EQ(0x08, buf[2]);
-    ASSERT_EQ(0x00, buf[3]);
+    ASSERT_EQ(5, len);
+    ASSERT_EQ(0x13, buf[0]);
+    ASSERT_EQ(0x90, buf[1]);
+    ASSERT_EQ(0x56, buf[2]);
+    ASSERT_EQ(0xE5, buf[3]);
+    ASSERT_EQ(0xA0, buf[4]);
     PASS();
 }
 
@@ -76,7 +80,7 @@ SUITE(aac_suite)
     RUN_TEST(asc_lc_16k_mono);
     RUN_TEST(asc_lc_48k_mono);
     RUN_TEST(asc_he_48k_mono);
-    RUN_TEST(asc_he_44k_stereo_reference);
+    RUN_TEST(asc_he_44k_stereo);
     RUN_TEST(asc_rejects_bad_input);
     RUN_TEST(rate_index_table);
 }
