@@ -7,6 +7,7 @@ extern SUITE(http_suite);
 extern SUITE(file_suite);
 extern SUITE(sei_suite);
 extern SUITE(jpeg_suite);
+extern SUITE(aac_suite);
 
 GREATEST_MAIN_DEFS();
 
@@ -20,5 +21,6 @@ int main(int argc, char **argv)
 	RUN_SUITE(file_suite);
 	RUN_SUITE(sei_suite);
 	RUN_SUITE(jpeg_suite);
+	RUN_SUITE(aac_suite);
 	GREATEST_MAIN_END();
 }
