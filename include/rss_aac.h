@@ -6,6 +6,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define RSS_AAC_AOT_LC 2
 #define RSS_AAC_AOT_SBR 5 /* HE-AAC v1: SBR extension wrapping an LC core */
 
@@ -27,5 +31,9 @@ int rss_aac_asc(int aot, int sample_rate, int channels, uint8_t *buf);
 
 /* Index into the ISO 14496-3 sampling-frequency table, or -1. */
 int rss_aac_rate_index(int sample_rate);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
