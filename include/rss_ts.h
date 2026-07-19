@@ -38,9 +38,11 @@ typedef struct {
     uint32_t pat_interval;
     uint8_t video_stream_type;
     uint8_t audio_stream_type;
+    uint8_t audio_channels; /* for the Opus PMT descriptor */
 } rss_ts_mux_t;
 
-void rss_ts_init(rss_ts_mux_t *m, uint8_t video_type, uint8_t audio_type, uint32_t pat_interval);
+void rss_ts_init(rss_ts_mux_t *m, uint8_t video_type, uint8_t audio_type, uint8_t audio_channels,
+                 uint32_t pat_interval);
 
 size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size);
 

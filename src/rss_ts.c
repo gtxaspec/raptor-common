@@ -205,11 +205,13 @@ static size_t write_pes_packets(uint8_t *buf, size_t buf_size, uint16_t pid, uin
 
 /* ── Public API ── */
 
-void rss_ts_init(rss_ts_mux_t *m, uint8_t video_type, uint8_t audio_type, uint32_t pat_interval)
+void rss_ts_init(rss_ts_mux_t *m, uint8_t video_type, uint8_t audio_type, uint8_t audio_channels,
+                 uint32_t pat_interval)
 {
     memset(m, 0, sizeof(*m));
     m->video_stream_type = video_type;
     m->audio_stream_type = audio_type;
+    m->audio_channels = audio_channels ? audio_channels : 1;
     m->pat_interval = pat_interval;
 }
 
@@ -296,15 +298,22 @@ size_t rss_ts_write_pat_pmt(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size)
         *p++ = (uint8_t)(RSS_TS_PID_AUDIO & 0xFF);
 
         if (m->audio_stream_type == RSS_TS_STREAM_OPUS) {
-            /* §2.6.1 registration_descriptor */
+            /* Opus-in-MPEG-TS: registration_descriptor (§2.6.1) plus
+             * the mandatory Opus audio descriptor. Without the latter a
+             * demuxer has no channel count and defaults to stereo, so a
+             * mono stream decodes as dual-mono with wrong metadata. */
             *p++ = 0xF0;
-            *p++ = 0x06;
-            *p++ = 0x05; /* descriptor_tag */
-            *p++ = 0x04; /* descriptor_length */
+            *p++ = 0x0A; /* ES_info_length: 6 (registration) + 4 (opus) */
+            *p++ = 0x05; /* registration_descriptor tag */
+            *p++ = 0x04; /* length */
             *p++ = 'O';
             *p++ = 'p';
             *p++ = 'u';
             *p++ = 's';
+            *p++ = 0x7F;              /* extension_descriptor tag */
+            *p++ = 0x02;              /* length */
+            *p++ = 0x80;              /* descriptor_tag_extension: Opus */
+            *p++ = m->audio_channels; /* channel_config_code */
         } else {
             *p++ = 0xF0;
             *p++ = 0x00;
