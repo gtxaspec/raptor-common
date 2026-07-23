@@ -66,7 +66,10 @@ int rss_daemonize(const char *name, bool already_daemon)
     /* Open pidfile and acquire exclusive lock BEFORE forking.
      * This eliminates the TOCTOU race between check and fork —
      * flock is atomic and the lock is inherited through fork. */
-    int pid_fd = open(path, O_WRONLY | O_CREAT, 0600);
+    /* O_CLOEXEC: the lock fd must not survive exec, or a daemon
+     * re-exec'ing itself (rvd save bayer recovery on T20) inherits
+     * its own lock and dies as "already running". */
+    int pid_fd = open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
     if (pid_fd < 0)
         return -1;
 
