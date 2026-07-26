@@ -4,3 +4,6 @@
 rss_build.h
 tests/tests
 *.so
+
+# build stamp: raptor/Makefile builds this directory through it
+.built
