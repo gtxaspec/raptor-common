@@ -137,6 +137,26 @@ rss_config_t *rss_config_load(const char *path)
 
     while (fgets(line, (int)sizeof(line), fp)) {
         lineno++;
+
+        /*
+         * A line that fills the buffer without its newline would
+         * otherwise be split: the head silently parsed with a
+         * truncated value, the tail parsed as a bogus second line.
+         * Peek one char to tell "exactly fits" from "over-long";
+         * over-long lines are rejected whole, loudly.
+         */
+        size_t len = strlen(line);
+        if (len == sizeof(line) - 1 && line[len - 1] != '\n') {
+            int ch = fgetc(fp);
+            if (ch != '\n' && ch != EOF) {
+                RSS_WARN("%s:%d: line too long (max %zu), ignored", path, lineno,
+                         sizeof(line) - 1);
+                while ((ch = fgetc(fp)) != '\n' && ch != EOF)
+                    ;
+                continue;
+            }
+        }
+
         char *s = rss_trim(line);
 
         /* Skip empty lines and full-line comments */

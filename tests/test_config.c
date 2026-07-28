@@ -249,6 +249,60 @@ TEST config_long_value(void)
 	PASS();
 }
 
+/* A line over MAX_LINE-1 chars must be rejected whole: no truncated
+ * value accepted from the head, no phantom key parsed from the tail. */
+TEST config_line_too_long_ignored(void)
+{
+	char longline[700];
+	memset(longline, 'A', sizeof(longline));
+	/* Head looks like a valid entry; tail contains what would misparse
+	 * as a second entry if the line were split at the buffer boundary. */
+	memcpy(longline, "toolong = ", 10);
+	memcpy(longline + 600, "\nphantom = tail\n", 16);
+	longline[616] = '\0';
+
+	char ini[1024];
+	snprintf(ini, sizeof(ini), "[s]\nbefore = 1\n%safter = 2\n", longline);
+
+	rss_config_t *cfg = load_ini(ini);
+	ASSERT(cfg);
+	ASSERT_STR_EQ("1", rss_config_get_str(cfg, "s", "before", ""));
+	ASSERT_STR_EQ("2", rss_config_get_str(cfg, "s", "after", ""));
+	/* The over-long entry is dropped entirely, not truncated-and-kept */
+	ASSERT_EQ(NULL, rss_config_get_str(cfg, "s", "toolong", NULL));
+	/* "phantom = tail" was inside the over-long line's spillover and is
+	 * legitimate input on the next physical line -- it must parse. */
+	ASSERT_STR_EQ("tail", rss_config_get_str(cfg, "s", "phantom", ""));
+	rss_config_free(cfg);
+	cleanup();
+	PASS();
+}
+
+/* A final line that exactly fills the buffer with no trailing newline
+ * is a complete line, not an over-long one -- it must parse. */
+TEST config_line_exact_fit_no_newline(void)
+{
+	/* MAX_LINE is 512; build content whose last line is exactly 511
+	 * chars with no newline: "k = " + 507 X's. */
+	char last[512];
+	memcpy(last, "k = ", 4);
+	memset(last + 4, 'X', 507);
+	last[511] = '\0';
+
+	char ini[1024];
+	snprintf(ini, sizeof(ini), "[s]\n%s", last);
+
+	rss_config_t *cfg = load_ini(ini);
+	ASSERT(cfg);
+	const char *v = rss_config_get_str(cfg, "s", "k", NULL);
+	ASSERT(v);
+	/* Value capped by MAX_VAL like any other long value */
+	ASSERT_EQ(255, (int)strlen(v));
+	rss_config_free(cfg);
+	cleanup();
+	PASS();
+}
+
 TEST config_duplicate_key(void)
 {
 	rss_config_t *cfg = load_ini("[s]\nkey = first\nkey = second\n");
@@ -699,5 +753,7 @@ SUITE(config_suite)
 	RUN_TEST(config_foreach);
 	RUN_TEST(config_empty_file);
 	RUN_TEST(config_long_value);
+	RUN_TEST(config_line_too_long_ignored);
+	RUN_TEST(config_line_exact_fit_no_newline);
 	RUN_TEST(config_duplicate_key);
 }
