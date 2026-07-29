@@ -67,8 +67,40 @@ TEST aac_pmt_has_no_opus_descriptor(void)
     PASS();
 }
 
+/* PCR must be strictly monotonic even when the DTS-derived value
+ * clamps at a rebased stream head (frame interval < the 33ms lead). */
+TEST ts_pcr_monotonic_at_head(void)
+{
+    rss_ts_mux_t m;
+    rss_ts_init(&m, RSS_TS_STREAM_H264, RSS_TS_STREAM_NONE, 1, 0);
+    uint8_t buf[4096];
+    uint8_t frame[64] = {0};
+    uint64_t last = 0;
+    bool have_last = false;
+    for (int i = 0; i < 4; i++) {
+        uint64_t dts = (uint64_t)i * 2320; /* < 3000-tick lead */
+        size_t n = rss_ts_write_video(&m, buf, sizeof(buf), frame, sizeof(frame), dts, dts, i == 0);
+        ASSERT(n > 0);
+        for (size_t off = 0; off + 188 <= n; off += 188) {
+            uint8_t *p = buf + off;
+            int afc = (p[3] >> 4) & 3;
+            if ((afc == 2 || afc == 3) && p[4] >= 7 && (p[5] & 0x10)) {
+                uint64_t base = ((uint64_t)p[6] << 25) | ((uint64_t)p[7] << 17) |
+                                ((uint64_t)p[8] << 9) | ((uint64_t)p[9] << 1) | (p[10] >> 7);
+                if (have_last)
+                    ASSERT(base > last);
+                last = base;
+                have_last = true;
+            }
+        }
+    }
+    ASSERT(have_last);
+    PASS();
+}
+
 SUITE(ts_suite)
 {
+    RUN_TEST(ts_pcr_monotonic_at_head);
     RUN_TEST(opus_pmt_carries_channel_descriptor);
     RUN_TEST(opus_channel_config_reflects_init);
     RUN_TEST(aac_pmt_has_no_opus_descriptor);

@@ -370,8 +370,14 @@ size_t rss_ts_write_video(rss_ts_mux_t *m, uint8_t *buf, size_t buf_size, const 
         pes_hdr_len = 14;
     }
 
-    /* PCR derived from DTS (§2.4.4.2: PCR ≤ DTS) */
+    /* PCR derived from DTS (§2.4.4.2: PCR ≤ DTS). The 33ms lead
+     * clamps the first frames of a rebased timeline to zero, so a
+     * strict-monotonicity guard keeps the clock honest at stream
+     * head (repeating an identical PCR reads as a stalled STC). */
     uint64_t pcr = dts_90khz > 3000 ? dts_90khz - 3000 : 0;
+    if (pcr <= m->last_pcr && m->pat_counter > 0)
+        pcr = m->last_pcr + 1;
+    m->last_pcr = pcr;
 
     size_t written = write_pes_packets(buf, buf_size, RSS_TS_PID_VIDEO, &m->cc_video, pes_hdr,
                                        pes_hdr_len, data, len, pcr, true, is_idr);

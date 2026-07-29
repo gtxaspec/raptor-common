@@ -36,6 +36,7 @@ typedef struct {
     uint8_t cc_audio;
     uint32_t pat_counter;
     uint32_t pat_interval;
+    uint64_t last_pcr;
     uint8_t video_stream_type;
     uint8_t audio_stream_type;
     uint8_t audio_channels; /* for the Opus PMT descriptor */
