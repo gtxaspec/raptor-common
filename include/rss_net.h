@@ -102,6 +102,31 @@ static inline int rss_socket_tcp(int *family)
 }
 
 /*
+ * The UDP twin of rss_socket_tcp: same family preference, same fallback
+ * rule, same *family out-parameter for building the bind address.
+ */
+static inline int rss_socket_udp(int *family)
+{
+    int fd = socket(AF_INET6, SOCK_DGRAM, 0);
+    if (fd >= 0) {
+        int zero = 0;
+        (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof(zero));
+        if (family)
+            *family = AF_INET6;
+        return fd;
+    }
+    if (errno != EAFNOSUPPORT && errno != EPROTONOSUPPORT)
+        return -1;
+
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0)
+        return -1;
+    if (family)
+        *family = AF_INET;
+    return fd;
+}
+
+/*
  * Fill *ss with the wildcard bind address for `family`. Returns the length
  * to hand bind(), or 0 if the family is one neither arm below knows.
  */
