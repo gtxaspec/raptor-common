@@ -734,6 +734,29 @@ TEST config_save_no_dirty_noop(void)
 	PASS();
 }
 
+/* has_dirty: false after load, true after a runtime set, false again
+ * once saved; reads that populate defaults never count */
+TEST config_has_dirty_lifecycle(void)
+{
+	const char *path = "/tmp/rss_test_config_dirty.ini";
+	const char *ini = "[s]\nk = v\n";
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, (int)strlen(ini)));
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+	ASSERT_EQ(false, rss_config_has_dirty(cfg));
+	(void)rss_config_get_int(cfg, "s", "missing", 42);
+	(void)rss_config_get_str(cfg, "s", "alsomissing", "d");
+	ASSERT_EQ(false, rss_config_has_dirty(cfg));
+	rss_config_set_str(cfg, "s", "k", "w");
+	ASSERT_EQ(true, rss_config_has_dirty(cfg));
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	ASSERT_EQ(false, rss_config_has_dirty(cfg));
+	rss_config_free(cfg);
+	ASSERT_EQ(false, rss_config_has_dirty(NULL));
+	unlink(path);
+	PASS();
+}
+
 /* ================================================================
  * Comment-preserving surgical save
  * ================================================================ */
@@ -1116,6 +1139,7 @@ SUITE(config_suite)
 	RUN_TEST(config_line_too_long_ignored);
 	RUN_TEST(config_line_exact_fit_no_newline);
 	RUN_TEST(config_duplicate_key);
+	RUN_TEST(config_has_dirty_lifecycle);
 	RUN_TEST(config_save_clean_leaves_file_untouched);
 	RUN_TEST(config_save_dirty_preserves_comments);
 	RUN_TEST(config_save_new_section_at_eof);

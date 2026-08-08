@@ -388,6 +388,19 @@ void rss_config_set_bool(rss_config_t *cfg, const char *section, const char *key
     rss_config_set_str(cfg, section, key, value ? "true" : "false");
 }
 
+bool rss_config_has_dirty(const rss_config_t *cfg)
+{
+    if (!cfg)
+        return false;
+    const rss_config_section_t *s;
+    const rss_config_entry_t *e;
+    for (s = cfg->sections; s; s = s->next)
+        for (e = s->entries; e; e = e->next)
+            if (e->dirty)
+                return true;
+    return false;
+}
+
 /* Write a config to a file (no merging) */
 static int config_write(rss_config_t *cfg, const char *path)
 {

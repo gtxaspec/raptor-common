@@ -74,9 +74,16 @@ int rss_ctrl_handle_common(const char *cmd_json, char *resp_buf, int resp_buf_si
 
     if (strcmp(cmd, "config-save") == 0) {
         cJSON_Delete(root);
+        /* Sampled before the save (it clears the flags) so the log can
+         * tell a real write from the nothing-dirty skip. A missing file
+         * is a write either way: save bootstraps the full config. */
+        bool wrote = rss_config_has_dirty(cfg) || access(config_path, F_OK) != 0;
         int ret = rss_config_save(cfg, config_path);
         if (ret == 0) {
-            RSS_INFO("running config saved to %s", config_path);
+            if (wrote)
+                RSS_INFO("running config saved to %s", config_path);
+            else
+                RSS_INFO("no config changes to save, %s untouched", config_path);
             return rss_ctrl_resp_ok(resp_buf, resp_buf_size);
         }
         return rss_ctrl_resp_error(resp_buf, resp_buf_size, "config save failed");

@@ -130,6 +130,9 @@ void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key,
 /* Set a boolean value in the running config. */
 void rss_config_set_bool(rss_config_t *cfg, const char *section, const char *key, bool value);
 
+/* True if any key was modified at runtime and not yet saved. */
+bool rss_config_has_dirty(const rss_config_t *cfg);
+
 /* Save running config to disk. Edits the existing file in place: only
  * runtime-modified (dirty) keys are touched, comments and formatting
  * survive, and a save with nothing dirty does not write at all.
