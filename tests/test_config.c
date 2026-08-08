@@ -2,7 +2,9 @@
 #include "rss_common.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define CFG_PATH "/tmp/rss_test_config.ini"
@@ -732,6 +734,364 @@ TEST config_save_no_dirty_noop(void)
 	PASS();
 }
 
+/* ================================================================
+ * Comment-preserving surgical save
+ * ================================================================ */
+
+#define TPL_PATH "/tmp/rss_test_config_tpl.ini"
+
+static const char *tpl_ini = "# Raptor Streaming System configuration\n"
+			     "# See raptor-docs/23-rss-config.md for the full reference\n"
+			     "\n"
+			     "[sensor]\n"
+			     "# All values auto-detected if omitted\n"
+			     "# name = gc4653\n"
+			     "\n"
+			     "[stream0]\n"
+			     "fps = 25    # frames per second\n"
+			     "enabled = true\n"
+			     "# gop = 50\n"
+			     "\n"
+			     "[audio]\n"
+			     "enabled = true\n"
+			     "codec = aac\n";
+
+static rss_config_t *load_tpl(void)
+{
+	if (rss_write_file_atomic(TPL_PATH, tpl_ini, (int)strlen(tpl_ini)) != 0)
+		return NULL;
+	return rss_config_load(TPL_PATH);
+}
+
+/* A save with nothing dirty must not rewrite the file at all */
+TEST config_save_clean_leaves_file_untouched(void)
+{
+	rss_config_t *cfg = load_tpl();
+	ASSERT(cfg);
+
+	struct stat before;
+	ASSERT_EQ(0, stat(TPL_PATH, &before));
+
+	/* Reads auto-populate defaults; none of this is dirty */
+	(void)rss_config_get_int(cfg, "stream0", "fps", 25);
+	(void)rss_config_get_int(cfg, "stream0", "gop", 50);
+	(void)rss_config_get_bool(cfg, "audio", "enabled", true);
+	(void)rss_config_get_str(cfg, "sensor", "name", "auto");
+
+	ASSERT_EQ(0, rss_config_save(cfg, TPL_PATH));
+	rss_config_free(cfg);
+
+	struct stat after;
+	ASSERT_EQ(0, stat(TPL_PATH, &after));
+	/* The atomic writer renames a temp file into place, so any rewrite
+	 * shows up as a new inode even when the bytes are identical. */
+	ASSERT_EQm("clean save rewrote the file", before.st_ino, after.st_ino);
+
+	int size = 0;
+	char *text = rss_read_file(TPL_PATH, &size);
+	ASSERT(text);
+	ASSERT_STR_EQ(tpl_ini, text);
+	free(text);
+
+	unlink(TPL_PATH);
+	PASS();
+}
+
+/* A dirty save edits lines in place and leaves every comment alone */
+TEST config_save_dirty_preserves_comments(void)
+{
+	rss_config_t *cfg = load_tpl();
+	ASSERT(cfg);
+
+	rss_config_set_int(cfg, "stream0", "fps", 15);	     /* replace, keep inline comment */
+	rss_config_set_int(cfg, "stream0", "gop", 30);	     /* new key, example comment stays */
+	rss_config_set_bool(cfg, "audio", "enabled", false); /* stream0's enabled untouched */
+	ASSERT_EQ(0, rss_config_save(cfg, TPL_PATH));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(TPL_PATH, &size);
+	ASSERT(text);
+
+	/* Comments survive verbatim */
+	ASSERT(strstr(text, "# Raptor Streaming System configuration\n"));
+	ASSERT(strstr(text, "# All values auto-detected if omitted\n"));
+	ASSERT(strstr(text, "# name = gc4653\n"));
+	ASSERT(strstr(text, "# gop = 50\n"));
+
+	/* fps replaced in place, inline comment preserved on the same line */
+	char *fps = strstr(text, "fps = 15");
+	ASSERT(fps);
+	char *eol = strchr(fps, '\n');
+	ASSERT(eol);
+	*eol = '\0';
+	ASSERTm("inline comment lost on edited line", strstr(fps, "# frames per second"));
+	*eol = '\n';
+	ASSERT(!strstr(text, "fps = 25"));
+
+	/* gop appended inside [stream0], before [audio] */
+	char *s0 = strstr(text, "[stream0]");
+	char *au = strstr(text, "[audio]");
+	char *gop = strstr(text, "\ngop = 30\n");
+	ASSERT(s0 && au && gop);
+	ASSERT(gop > s0);
+	ASSERT(gop < au);
+
+	/* audio's enabled flipped, stream0's untouched */
+	char *s0_en = strstr(s0, "enabled = true");
+	ASSERT(s0_en);
+	ASSERT(s0_en < au);
+	ASSERT(strstr(au, "enabled = false"));
+	free(text);
+
+	/* And the result still parses to the new values */
+	rss_config_t *check = rss_config_load(TPL_PATH);
+	ASSERT(check);
+	ASSERT_EQ(15, rss_config_get_int(check, "stream0", "fps", -1));
+	ASSERT_EQ(30, rss_config_get_int(check, "stream0", "gop", -1));
+	ASSERT_EQ(false, rss_config_get_bool(check, "audio", "enabled", true));
+	ASSERT_EQ(true, rss_config_get_bool(check, "stream0", "enabled", false));
+	rss_config_free(check);
+
+	unlink(TPL_PATH);
+	PASS();
+}
+
+/* A dirty key in a section the file lacks appends the section at EOF */
+TEST config_save_new_section_at_eof(void)
+{
+	rss_config_t *cfg = load_tpl();
+	ASSERT(cfg);
+	rss_config_set_bool(cfg, "recording", "enabled", true);
+	rss_config_set_str(cfg, "recording", "path", "/mnt/mmc");
+	ASSERT_EQ(0, rss_config_save(cfg, TPL_PATH));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(TPL_PATH, &size);
+	ASSERT(text);
+	ASSERT(strstr(text, "# Raptor Streaming System configuration\n"));
+	char *au = strstr(text, "[audio]");
+	char *rec = strstr(text, "[recording]");
+	ASSERT(au);
+	ASSERT(rec);
+	ASSERT(rec > au);
+	ASSERT(strstr(rec, "enabled = true"));
+	ASSERT(strstr(rec, "path = /mnt/mmc"));
+	free(text);
+
+	rss_config_t *check = rss_config_load(TPL_PATH);
+	ASSERT(check);
+	ASSERT_EQ(true, rss_config_get_bool(check, "recording", "enabled", false));
+	ASSERT_STR_EQ("/mnt/mmc", rss_config_get_str(check, "recording", "path", ""));
+	rss_config_free(check);
+	unlink(TPL_PATH);
+	PASS();
+}
+
+/* With duplicate key lines, the effective (last) one is replaced and
+ * the shadowed line is left exactly as it was */
+TEST config_save_replaces_last_duplicate(void)
+{
+	const char *path = "/tmp/rss_test_config_dup.ini";
+	const char *ini = "[s]\nkey = first\nkey = second"; /* no trailing newline */
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, (int)strlen(ini)));
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+	ASSERT_STR_EQ("second", rss_config_get_str(cfg, "s", "key", ""));
+
+	rss_config_set_str(cfg, "s", "key", "third");
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(path, &size);
+	ASSERT(text);
+	ASSERT(strstr(text, "key = first\n"));
+	ASSERT(!strstr(text, "key = second"));
+	ASSERT(strstr(text, "key = third"));
+	free(text);
+
+	rss_config_t *check = rss_config_load(path);
+	ASSERT(check);
+	ASSERT_STR_EQ("third", rss_config_get_str(check, "s", "key", ""));
+	rss_config_free(check);
+	unlink(path);
+	PASS();
+}
+
+/* Replacement keeps the file's own key and section spelling */
+TEST config_save_replace_keeps_spelling(void)
+{
+	const char *path = "/tmp/rss_test_config_case.ini";
+	const char *ini = "[RTSP]\nAuth = basic\n";
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, (int)strlen(ini)));
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+	rss_config_set_str(cfg, "rtsp", "auth", "digest");
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(path, &size);
+	ASSERT(text);
+	ASSERT(strstr(text, "[RTSP]\n"));
+	ASSERT(strstr(text, "Auth = digest"));
+	free(text);
+	unlink(path);
+	PASS();
+}
+
+/* Keys in the global (unnamed) section stay above the first header */
+TEST config_save_global_section_append(void)
+{
+	const char *path = "/tmp/rss_test_config_glob.ini";
+	const char *ini = "# banner\n\nport = 1\n\n[s]\nk = v\n";
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, (int)strlen(ini)));
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+	rss_config_set_str(cfg, NULL, "port", "2");
+	rss_config_set_str(cfg, NULL, "gkey", "gval");
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(path, &size);
+	ASSERT(text);
+	ASSERT(strstr(text, "# banner\n"));
+	char *sec = strstr(text, "[s]");
+	char *port = strstr(text, "port = 2");
+	char *gk = strstr(text, "gkey = gval");
+	ASSERT(sec);
+	ASSERT(port);
+	ASSERT(gk);
+	ASSERT(port < sec);
+	ASSERT(gk < sec);
+	free(text);
+
+	rss_config_t *check = rss_config_load(path);
+	ASSERT(check);
+	ASSERT_STR_EQ("2", rss_config_get_str(check, NULL, "port", ""));
+	ASSERT_STR_EQ("gval", rss_config_get_str(check, NULL, "gkey", ""));
+	ASSERT_STR_EQ("v", rss_config_get_str(check, "s", "k", ""));
+	rss_config_free(check);
+	unlink(path);
+	PASS();
+}
+
+/* A maximum-length value through the replacement path, on a line that
+ * also carries an inline comment: the size budget must hold */
+TEST config_save_max_value_replace(void)
+{
+	const char *path = "/tmp/rss_test_config_maxval.ini";
+	const char *ini = "[s]\nkey = old    # keep me\nother = x\n";
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, (int)strlen(ini)));
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+
+	char big[256];
+	memset(big, 'v', sizeof(big) - 1);
+	big[sizeof(big) - 1] = '\0';
+	rss_config_set_str(cfg, "s", "key", big);
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(path, &size);
+	ASSERT(text);
+	char *line = strstr(text, "key = vvvv");
+	ASSERT(line);
+	char *eol = strchr(line, '\n');
+	ASSERT(eol);
+	*eol = '\0';
+	ASSERTm("inline comment lost on max-value replace", strstr(line, "# keep me"));
+	*eol = '\n';
+	ASSERT(strstr(text, "other = x\n"));
+	free(text);
+
+	rss_config_t *check = rss_config_load(path);
+	ASSERT(check);
+	ASSERT_STR_EQ(big, rss_config_get_str(check, "s", "key", ""));
+	rss_config_free(check);
+	unlink(path);
+	PASS();
+}
+
+/* A replacement that would produce a line the parser rejects must
+ * degrade (drop the comment, then the file's key spelling) rather
+ * than lose the value on the next load */
+TEST config_save_replace_never_unparseable(void)
+{
+	const char *path = "/tmp/rss_test_config_widekey.ini";
+	char ini[1024];
+	int n = snprintf(ini, sizeof(ini), "[s]\n");
+	int ks = n;
+	memset(ini + n, 'k', 480); /* 480-char key token: line parseable */
+	n += 480;
+	n += snprintf(ini + n, sizeof(ini) - n, " = x\n");
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, n));
+
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+
+	char keybuf[64]; /* parser stores the key truncated to 63 chars */
+	memcpy(keybuf, ini + ks, 63);
+	keybuf[63] = '\0';
+	ASSERT_STR_EQ("x", rss_config_get_str(cfg, "s", keybuf, ""));
+
+	char big[256];
+	memset(big, 'v', sizeof(big) - 1);
+	big[sizeof(big) - 1] = '\0';
+	rss_config_set_str(cfg, "s", keybuf, big);
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	rss_config_free(cfg);
+
+	/* 480-char spelling + 255-char value would be over the parser's
+	 * line limit; the save must have degraded to keep it loadable */
+	rss_config_t *check = rss_config_load(path);
+	ASSERT(check);
+	ASSERT_STR_EQ(big, rss_config_get_str(check, "s", keybuf, ""));
+	rss_config_free(check);
+	unlink(path);
+	PASS();
+}
+
+/* Lines too long for the parser pass through a save verbatim */
+TEST config_save_overlong_line_preserved(void)
+{
+	const char *path = "/tmp/rss_test_config_ovl.ini";
+	char ini[1024];
+	int n = snprintf(ini, sizeof(ini), "[s]\nkey = ");
+	memset(ini + n, 'x', 600);
+	n += 600;
+	n += snprintf(ini + n, sizeof(ini) - n, "\nkey = short\n");
+	ASSERT_EQ(0, rss_write_file_atomic(path, ini, n));
+
+	rss_config_t *cfg = rss_config_load(path);
+	ASSERT(cfg);
+	/* Parser ignored the over-long line */
+	ASSERT_STR_EQ("short", rss_config_get_str(cfg, "s", "key", ""));
+
+	rss_config_set_str(cfg, "s", "key", "new");
+	ASSERT_EQ(0, rss_config_save(cfg, path));
+	rss_config_free(cfg);
+
+	int size = 0;
+	char *text = rss_read_file(path, &size);
+	ASSERT(text);
+	ASSERTm("over-long line dropped by save", strstr(text, "xxxxxxxxxx"));
+	ASSERT(strstr(text, "key = new"));
+	ASSERT(!strstr(text, "key = short"));
+	free(text);
+
+	rss_config_t *check = rss_config_load(path);
+	ASSERT(check);
+	ASSERT_STR_EQ("new", rss_config_get_str(check, "s", "key", ""));
+	rss_config_free(check);
+	unlink(path);
+	PASS();
+}
+
 SUITE(config_suite)
 {
 	RUN_TEST(config_load_basic);
@@ -756,4 +1116,13 @@ SUITE(config_suite)
 	RUN_TEST(config_line_too_long_ignored);
 	RUN_TEST(config_line_exact_fit_no_newline);
 	RUN_TEST(config_duplicate_key);
+	RUN_TEST(config_save_clean_leaves_file_untouched);
+	RUN_TEST(config_save_dirty_preserves_comments);
+	RUN_TEST(config_save_new_section_at_eof);
+	RUN_TEST(config_save_replaces_last_duplicate);
+	RUN_TEST(config_save_replace_keeps_spelling);
+	RUN_TEST(config_save_global_section_append);
+	RUN_TEST(config_save_max_value_replace);
+	RUN_TEST(config_save_replace_never_unparseable);
+	RUN_TEST(config_save_overlong_line_preserved);
 }

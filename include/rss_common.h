@@ -130,7 +130,10 @@ void rss_config_set_int(rss_config_t *cfg, const char *section, const char *key,
 /* Set a boolean value in the running config. */
 void rss_config_set_bool(rss_config_t *cfg, const char *section, const char *key, bool value);
 
-/* Save running config to disk (atomic write). Returns 0 on success. */
+/* Save running config to disk. Edits the existing file in place: only
+ * runtime-modified (dirty) keys are touched, comments and formatting
+ * survive, and a save with nothing dirty does not write at all.
+ * Atomic (tmp + fsync + rename). Returns 0 on success. */
 int rss_config_save(rss_config_t *cfg, const char *path);
 
 /* ================================================================

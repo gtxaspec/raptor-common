@@ -3,6 +3,11 @@
  *
  * Simple [section] / key = value parser. Linked list storage,
  * case-insensitive section and key lookup, inline comment stripping.
+ *
+ * Saving edits the existing file line by line instead of reserializing
+ * the parsed state: only lines owned by runtime-modified (dirty) keys
+ * are touched, so comments, formatting, and other daemons' keys all
+ * survive every save. A save with nothing dirty does not write at all.
  */
 
 #include "rss_common.h"
@@ -96,23 +101,30 @@ static void add_entry(rss_config_section_t *sec, const char *key, const char *va
     add_entry_ex(sec, key, value, false);
 }
 
-/* Strip inline comment: look for ' #' or '\t#'.
- * Does NOT handle quoted values — "foo # bar" will be truncated at #.
+/* Find the '#' that starts an inline comment: ' #' or '\t#'.
+ * Does NOT handle quoted values — "foo # bar" is a comment at #.
  * Config files currently use no quoted values. */
-static void strip_inline_comment(char *s)
+static const char *find_inline_comment(const char *s)
 {
-    char *p = s;
+    const char *p = s;
     while ((p = strchr(p, '#')) != NULL) {
-        if (p > s && (*(p - 1) == ' ' || *(p - 1) == '\t')) {
-            /* Trim trailing whitespace before the comment marker */
-            char *end = p - 1;
-            while (end > s && (*end == ' ' || *end == '\t'))
-                end--;
-            *(end + 1) = '\0';
-            return;
-        }
+        if (p > s && (*(p - 1) == ' ' || *(p - 1) == '\t'))
+            return p;
         p++;
     }
+    return NULL;
+}
+
+static void strip_inline_comment(char *s)
+{
+    const char *p = find_inline_comment(s);
+    if (!p)
+        return;
+    /* Trim trailing whitespace before the comment marker */
+    char *end = s + (p - s) - 1;
+    while (end > s && (*end == ' ' || *end == '\t'))
+        end--;
+    *(end + 1) = '\0';
 }
 
 /* ------------------------------------------------------------------ */
@@ -149,8 +161,7 @@ rss_config_t *rss_config_load(const char *path)
         if (len == sizeof(line) - 1 && line[len - 1] != '\n') {
             int ch = fgetc(fp);
             if (ch != '\n' && ch != EOF) {
-                RSS_WARN("%s:%d: line too long (max %zu), ignored", path, lineno,
-                         sizeof(line) - 1);
+                RSS_WARN("%s:%d: line too long (max %zu), ignored", path, lineno, sizeof(line) - 1);
                 while ((ch = fgetc(fp)) != '\n' && ch != EOF)
                     ;
                 continue;
@@ -473,13 +484,306 @@ out:
     return ret;
 }
 
+/* ------------------------------------------------------------------ */
+/* Comment-preserving surgical save                                    */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int kind;           /* 0 = inert, 1 = section header, 2 = key line */
+    bool nonblank;      /* anything visible on the line */
+    char sec[MAX_SECN]; /* kind 1: parsed section name */
+    char key[MAX_KEY];  /* kind 2: the key as the parser sees it */
+    int key_end;        /* kind 2: raw offset just past the key token */
+    int com_off;        /* kind 2: raw offset of the inline comment run, or -1 */
+} line_info_t;
+
+/* Mirror rss_config_load's rules exactly: a line the parser would not
+ * bind to a key or section must never be edited. */
+static void classify_line(const char *raw, int len, line_info_t *li)
+{
+    li->kind = 0;
+    li->nonblank = false;
+    li->com_off = -1;
+
+    for (int i = 0; i < len; i++) {
+        if (!isspace((unsigned char)raw[i])) {
+            li->nonblank = true;
+            break;
+        }
+    }
+
+    /* The parser rejects over-long lines whole */
+    if (len >= MAX_LINE)
+        return;
+
+    char copy[MAX_LINE];
+    memcpy(copy, raw, (size_t)len);
+    copy[len] = '\0';
+
+    char *s = rss_trim(copy);
+    if (*s == '\0' || *s == '#' || *s == ';')
+        return;
+
+    if (*s == '[') {
+        char *end = strchr(s, ']');
+        if (!end)
+            return;
+        *end = '\0';
+        rss_strlcpy(li->sec, rss_trim(s + 1), sizeof(li->sec));
+        li->kind = 1;
+        return;
+    }
+
+    char *eq = strchr(s, '=');
+    if (!eq)
+        return;
+
+    *eq = '\0';
+    char *key = rss_trim(s);
+    if (*key == '\0')
+        return;
+
+    li->kind = 2;
+    li->key_end = (int)(key - copy) + (int)strlen(key);
+    rss_strlcpy(li->key, key, sizeof(li->key));
+
+    /* Note where an inline comment starts (including its alignment
+     * whitespace) so a replacement line can carry it over. */
+    char *val = rss_trim(eq + 1);
+    const char *com = find_inline_comment(val);
+    if (com) {
+        while (com > copy && (*(com - 1) == ' ' || *(com - 1) == '\t'))
+            com--;
+        li->com_off = (int)(com - copy);
+    }
+}
+
+typedef struct {
+    const char *sec; /* section name, entry spelling */
+    rss_config_entry_t *ent;
+    int replace_line; /* line whose key this entry replaces, or -1 */
+    int rep_key_end;  /* that line's key_end */
+    int rep_com_off;  /* that line's com_off */
+    int append_line;  /* insert after this line, or -1 = top of file */
+    bool sec_in_file;
+    bool done;
+} dirty_ref_t;
+
+/* Collect dirty entries in original set order (both lists prepend, so
+ * reversing the flat walk restores it). Returns the count, -1 on OOM. */
+static int collect_dirty(rss_config_t *cfg, dirty_ref_t **out)
+{
+    int ndirty = 0;
+    rss_config_section_t *s;
+    rss_config_entry_t *e;
+
+    *out = NULL;
+    for (s = cfg->sections; s; s = s->next)
+        for (e = s->entries; e; e = e->next)
+            if (e->dirty)
+                ndirty++;
+    if (ndirty == 0)
+        return 0;
+
+    dirty_ref_t *dr = calloc((size_t)ndirty, sizeof(*dr));
+    if (!dr)
+        return -1;
+
+    int d = 0;
+    for (s = cfg->sections; s; s = s->next) {
+        for (e = s->entries; e; e = e->next) {
+            if (!e->dirty)
+                continue;
+            dr[d].sec = s->name;
+            dr[d].ent = e;
+            dr[d].replace_line = -1;
+            dr[d].append_line = -1;
+            d++;
+        }
+    }
+    for (int i = 0, j = ndirty - 1; i < j; i++, j--) {
+        dirty_ref_t tmp = dr[i];
+        dr[i] = dr[j];
+        dr[j] = tmp;
+    }
+
+    *out = dr;
+    return ndirty;
+}
+
+/* Rewrite the file with only the dirty entries edited in: the last key
+ * line that matches in its section is regenerated in place (keeping its
+ * inline comment), new keys land at the end of their section's content,
+ * new sections at end of file. Every other line — comments, blanks,
+ * even lines the parser rejects — is emitted verbatim. */
+static int config_write_surgical(const char *text, int tsize, dirty_ref_t *dr, int ndirty,
+                                 const char *path)
+{
+    int nlines = 0;
+    for (int i = 0; i < tsize; i++)
+        if (text[i] == '\n')
+            nlines++;
+    if (tsize > 0 && text[tsize - 1] != '\n')
+        nlines++;
+
+    int *loff = NULL, *llen = NULL;
+    if (nlines > 0) {
+        loff = malloc((size_t)nlines * sizeof(*loff));
+        llen = malloc((size_t)nlines * sizeof(*llen));
+        if (!loff || !llen) {
+            free(loff);
+            free(llen);
+            return -1;
+        }
+        int l = 0, start = 0;
+        for (int i = 0; i < tsize; i++) {
+            if (text[i] == '\n') {
+                loff[l] = start;
+                llen[l] = i - start;
+                l++;
+                start = i + 1;
+            }
+        }
+        if (start < tsize) {
+            loff[l] = start;
+            llen[l] = tsize - start;
+        }
+    }
+
+    /* Bind every dirty entry to the file */
+    char cursec[MAX_SECN] = "";
+    line_info_t li;
+    for (int l = 0; l < nlines; l++) {
+        classify_line(text + loff[l], llen[l], &li);
+        if (li.kind == 1)
+            rss_strlcpy(cursec, li.sec, sizeof(cursec));
+        for (int d = 0; d < ndirty; d++) {
+            if (strcasecmp(dr[d].sec, cursec) != 0)
+                continue;
+            if (li.kind == 1)
+                dr[d].sec_in_file = true;
+            if (li.nonblank)
+                dr[d].append_line = l;
+            if (li.kind == 2 && strcasecmp(dr[d].ent->key, li.key) == 0) {
+                dr[d].replace_line = l;
+                dr[d].rep_key_end = li.key_end;
+                dr[d].rep_com_off = li.com_off;
+            }
+        }
+    }
+
+    /* A replaced line grows by at most " = value"; appended keys,
+     * headers, and separators are bounded by the fixed field sizes. */
+    int cap = tsize + nlines + ndirty * (MAX_LINE + MAX_VAL + MAX_SECN + 16) + 16;
+    char *out = malloc((size_t)cap);
+    if (!out) {
+        free(loff);
+        free(llen);
+        return -1;
+    }
+    int off = 0;
+
+    /* Global-section keys with nothing to anchor to go at the top */
+    for (int d = 0; d < ndirty; d++) {
+        if (dr[d].sec[0] == '\0' && dr[d].replace_line < 0 && dr[d].append_line < 0) {
+            off += snprintf(out + off, (size_t)(cap - off), "%s = %s\n", dr[d].ent->key,
+                            dr[d].ent->value);
+            dr[d].done = true;
+        }
+    }
+
+    for (int l = 0; l < nlines; l++) {
+        int rep = -1;
+        for (int d = 0; d < ndirty; d++) {
+            if (dr[d].replace_line == l) {
+                rep = d;
+                break;
+            }
+        }
+        if (rep >= 0) {
+            dirty_ref_t *r = &dr[rep];
+            int vlen = (int)strlen(r->ent->value);
+            int keylen = r->rep_key_end;
+            int comlen = (r->rep_com_off >= 0) ? llen[l] - r->rep_com_off : 0;
+
+            /* Never rebuild a line the parser would reject — it would
+             * lose the value on the next load. Drop the comment first,
+             * then the file's key spelling (the stored key is capped at
+             * MAX_KEY, so the short form always fits). */
+            if (keylen + 3 + vlen + comlen >= MAX_LINE)
+                comlen = 0;
+            if (keylen + 3 + vlen >= MAX_LINE)
+                keylen = 0;
+
+            if (keylen > 0) {
+                memcpy(out + off, text + loff[l], (size_t)keylen);
+                off += keylen;
+                off += snprintf(out + off, (size_t)(cap - off), " = %s", r->ent->value);
+            } else {
+                off +=
+                    snprintf(out + off, (size_t)(cap - off), "%s = %s", r->ent->key, r->ent->value);
+            }
+            if (comlen > 0) {
+                memcpy(out + off, text + loff[l] + r->rep_com_off, (size_t)comlen);
+                off += comlen;
+            }
+            out[off++] = '\n';
+            r->done = true;
+        } else {
+            memcpy(out + off, text + loff[l], (size_t)llen[l]);
+            off += llen[l];
+            out[off++] = '\n';
+        }
+        for (int d = 0; d < ndirty; d++) {
+            if (!dr[d].done && dr[d].replace_line < 0 && dr[d].append_line == l) {
+                off += snprintf(out + off, (size_t)(cap - off), "%s = %s\n", dr[d].ent->key,
+                                dr[d].ent->value);
+                dr[d].done = true;
+            }
+        }
+    }
+
+    /* Sections the file does not have yet */
+    for (int d = 0; d < ndirty; d++) {
+        if (dr[d].done || dr[d].sec_in_file || dr[d].sec[0] == '\0')
+            continue;
+        if (off > 0 && !(off > 1 && out[off - 1] == '\n' && out[off - 2] == '\n'))
+            out[off++] = '\n';
+        off += snprintf(out + off, (size_t)(cap - off), "[%s]\n", dr[d].sec);
+        for (int d2 = d; d2 < ndirty; d2++) {
+            if (dr[d2].done || strcasecmp(dr[d2].sec, dr[d].sec) != 0)
+                continue;
+            off += snprintf(out + off, (size_t)(cap - off), "%s = %s\n", dr[d2].ent->key,
+                            dr[d2].ent->value);
+            dr[d2].done = true;
+        }
+    }
+
+    int ret = rss_write_file_atomic(path, out, off);
+    free(out);
+    free(loff);
+    free(llen);
+    return ret;
+}
+
 int rss_config_save(rss_config_t *cfg, const char *path)
 {
     if (!cfg || !path)
         return -1;
 
+    dirty_ref_t *dr = NULL;
+    int ndirty = collect_dirty(cfg, &dr);
+    if (ndirty < 0)
+        return -1;
+
+    /* Nothing changed and the file exists: do not touch it. Every
+     * daemon answers config-save, so a no-op save must not cost a
+     * flash rewrite (or disturb a hand-maintained file) per daemon. */
+    if (ndirty == 0 && access(path, F_OK) == 0)
+        return 0;
+
     /* Serialize saves across daemons sharing the same config file.
-     * flock on a .lock sidecar prevents concurrent load-merge-write
+     * flock on a .lock sidecar prevents concurrent read-edit-write
      * cycles from losing updates via the atomic rename. */
     char lockpath[512];
     snprintf(lockpath, sizeof(lockpath), "%s.lock", path);
@@ -490,25 +794,16 @@ int rss_config_save(rss_config_t *cfg, const char *path)
     if (lock_fd >= 0)
         flock(lock_fd, LOCK_EX);
 
-    /* Only merge entries modified at runtime (dirty) into the existing
-     * file.  Each daemon shares /etc/raptor.conf but owns different
-     * sections — writing the entire in-memory config would clobber
-     * changes made by other daemons. */
+    /* Edit the existing file in place so everything this config does
+     * not own — other daemons' keys, comments, formatting — survives.
+     * Without an existing file, write out the whole in-memory config. */
     int ret;
-    rss_config_t *disk = rss_config_load(path);
-    if (disk) {
-        rss_config_section_t *s;
-        for (s = cfg->sections; s; s = s->next) {
-            rss_config_entry_t *e;
-            for (e = s->entries; e; e = e->next) {
-                if (e->dirty)
-                    rss_config_set_str(disk, s->name, e->key, e->value);
-            }
-        }
-        ret = config_write(disk, path);
-        rss_config_free(disk);
+    int tsize = 0;
+    char *text = rss_read_file(path, &tsize);
+    if (text) {
+        ret = config_write_surgical(text, tsize, dr, ndirty, path);
+        free(text);
     } else {
-        /* No existing file — write everything */
         ret = config_write(cfg, path);
     }
 
@@ -526,5 +821,6 @@ int rss_config_save(rss_config_t *cfg, const char *path)
         flock(lock_fd, LOCK_UN);
         close(lock_fd);
     }
+    free(dr);
     return ret;
 }
