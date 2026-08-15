@@ -36,8 +36,7 @@ static int ctrl_send_obj(const char *sock_path, cJSON *obj, char *resp, int resp
     return rss_ctrl_send_command(sock_path, msg, resp, resp_size, timeout_ms);
 }
 
-int rss_ctrl_cmd(const char *sock_path, const char *cmd, char *resp, int resp_size,
-                 int timeout_ms)
+int rss_ctrl_cmd(const char *sock_path, const char *cmd, char *resp, int resp_size, int timeout_ms)
 {
     cJSON *o = cJSON_CreateObject();
     if (o)
@@ -45,8 +44,8 @@ int rss_ctrl_cmd(const char *sock_path, const char *cmd, char *resp, int resp_si
     return ctrl_send_obj(sock_path, o, resp, resp_size, timeout_ms);
 }
 
-int rss_ctrl_cmd_int(const char *sock_path, const char *cmd, const char *key, int value,
-                     char *resp, int resp_size, int timeout_ms)
+int rss_ctrl_cmd_int(const char *sock_path, const char *cmd, const char *key, int value, char *resp,
+                     int resp_size, int timeout_ms)
 {
     cJSON *o = cJSON_CreateObject();
     if (o) {
