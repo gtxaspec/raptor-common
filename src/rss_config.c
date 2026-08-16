@@ -397,7 +397,16 @@ void rss_config_set_str(rss_config_t *cfg, const char *section, const char *key,
 {
     if (!cfg || !key || !value)
         return;
-    rss_config_section_t *sec = find_or_create_section(cfg, section ? section : "");
+    /* An empty section is not a place. The writer would emit the key above
+     * the first [section] header, where no loader ever reads it again — a
+     * JPEG channel with an unset cfg_sect persisted its quality into
+     * exactly that oblivion. Refuse loudly; the parser still tolerates
+     * such lines in existing files, this only stops creating new ones. */
+    if (!section || !section[0]) {
+        RSS_WARN("config: refusing to set '%s' without a section", key);
+        return;
+    }
+    rss_config_section_t *sec = find_or_create_section(cfg, section);
     if (sec)
         add_entry_ex(sec, key, value, true, false);
 }
